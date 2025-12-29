@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: supfile-postgres
+    environment:
+      POSTGRES_USER: supfile_user
+      POSTGRES_PASSWORD: supfile_password
+      POSTGRES_DB: supfile
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supfile_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - supfile-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: supfile-backend
+    environment:
+      - DATABASE_URL=postgresql://supfile_user:supfile_password@postgres:5432/supfile
+      - SECRET_KEY=dev-secret-key-change-in-production-min-32-chars
+      - JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production-min-32-chars
+      - AZURE_STORAGE_ACCOUNT_NAME=${AZURE_STORAGE_ACCOUNT_NAME:-}
+      - AZURE_STORAGE_ACCOUNT_KEY=${AZURE_STORAGE_ACCOUNT_KEY:-}
+      - AZURE_STORAGE_CONTAINER_NAME=supfile-files
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:-}
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+      - DEBUG=True
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    networks:
+      - supfile-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: supfile-frontend
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - supfile-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  supfile-network:
+    driver: bridge
+
