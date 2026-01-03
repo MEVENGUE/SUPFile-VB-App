@@ -111,18 +111,20 @@ IS_PRODUCTION = (
     or os.getenv("VERCEL") is not None
 )
 
-# Validate OAuth URLs in production (prevent localhost in production)
+# Warn about OAuth URLs in production (but don't block startup)
+# This allows the app to start even if OAuth is not fully configured
 if IS_PRODUCTION:
+    import warnings
     if "localhost" in settings.OAUTH_REDIRECT_BASE_URL:
-        raise ValueError(
-            "❌ OAUTH_REDIRECT_BASE_URL must be set to your Vercel frontend URL in production. "
-            f"Current value: {settings.OAUTH_REDIRECT_BASE_URL}\n"
-            "📝 Configure in Railway: OAUTH_REDIRECT_BASE_URL=https://supfile-webapp.vercel.app"
+        warnings.warn(
+            f"⚠️ OAUTH_REDIRECT_BASE_URL is set to localhost in production: {settings.OAUTH_REDIRECT_BASE_URL}\n"
+            "📝 Configure in Railway: OAUTH_REDIRECT_BASE_URL=https://supfile-webapp.vercel.app",
+            UserWarning
         )
     if "localhost" in settings.OAUTH_CALLBACK_BASE_URL:
-        raise ValueError(
-            "❌ OAUTH_CALLBACK_BASE_URL must be set to your Railway backend URL in production. "
-            f"Current value: {settings.OAUTH_CALLBACK_BASE_URL}\n"
-            "📝 Configure in Railway: OAUTH_CALLBACK_BASE_URL=https://supfile-vercel-app-production.up.railway.app"
+        warnings.warn(
+            f"⚠️ OAUTH_CALLBACK_BASE_URL is set to localhost in production: {settings.OAUTH_CALLBACK_BASE_URL}\n"
+            "📝 Configure in Railway: OAUTH_CALLBACK_BASE_URL=https://supfile-vercel-app-production.up.railway.app",
+            UserWarning
         )
 
