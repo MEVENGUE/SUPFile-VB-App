@@ -149,15 +149,14 @@ async def oauth_callback(
         provider_config = OAUTH_PROVIDERS[provider]
         client_id = get_oauth_client_id(provider)
         client_secret = get_oauth_client_secret(provider)
-        # Use OAUTH_CALLBACK_BASE_URL if set, otherwise use the current request's base URL
+        # Use OAUTH_CALLBACK_BASE_URL if set, otherwise derive from OAUTH_REDIRECT_BASE_URL
+        # IMPORTANT: This must match EXACTLY the redirect_uri used in oauth_authorize
         if settings.OAUTH_CALLBACK_BASE_URL:
             callback_base = settings.OAUTH_CALLBACK_BASE_URL
-        elif request:
-            base_url = str(request.base_url).rstrip('/')
-            callback_base = base_url
         else:
-            # Fallback to OAUTH_REDIRECT_BASE_URL (for backward compatibility)
-            callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('http://', 'https://')
+            # Fallback: try to derive backend URL from frontend URL
+            # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
+            callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://')
         redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
 
         # Exchange code for token
