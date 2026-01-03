@@ -14,6 +14,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>
   register: (email: string, username: string, password: string, fullName?: string) => Promise<void>
   logout: () => void
+  setTokens: (accessToken: string, refreshToken: string) => Promise<void>
   isAuthenticated: boolean
 }
 
@@ -51,6 +52,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null)
     setUser(null)
     localStorage.removeItem('token')
+    localStorage.removeItem('refreshToken')
+  }
+
+  const setTokens = async (accessToken: string, refreshToken: string) => {
+    setToken(accessToken)
+    localStorage.setItem('token', accessToken)
+    localStorage.setItem('refreshToken', refreshToken)
+    try {
+      const userData = await authService.getCurrentUser(accessToken)
+      setUser(userData)
+    } catch (error) {
+      console.error('Error fetching user after OAuth login:', error)
+    }
   }
 
   return (
@@ -61,6 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        setTokens,
         isAuthenticated: !!token,
       }}
     >

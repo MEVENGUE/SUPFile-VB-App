@@ -6,7 +6,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional, BinaryIO
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, ContentSettings
 from azure.core.exceptions import AzureError
 from app.core.config import settings
 import logging
@@ -61,6 +61,37 @@ class AzureBlobService:
         ).strip()
         return f"{user_id}/{file_uuid}/{safe_filename}"
     
+    def _sanitize_metadata(self, metadata: dict) -> dict:
+        """
+        Sanitize metadata for Azure Blob Storage
+        Azure requires:
+        - Metadata keys must be valid HTTP header names (alphanumeric and hyphens only)
+        - Metadata values must be ASCII strings
+        - Keys are automatically prefixed with 'x-ms-meta-' by Azure SDK
+        """
+        sanitized = {}
+        for key, value in metadata.items():
+            # Sanitize key: only alphanumeric and hyphens, lowercase
+            sanitized_key = "".join(c for c in str(key) if c.isalnum() or c == '-').lower()
+            # Remove leading/trailing hyphens
+            sanitized_key = sanitized_key.strip('-')
+            # Limit key length (Azure has limits)
+            if len(sanitized_key) > 64:
+                sanitized_key = sanitized_key[:64]
+            
+            # Sanitize value: convert to string and ensure ASCII
+            sanitized_value = str(value)
+            # Remove or replace non-ASCII characters
+            sanitized_value = sanitized_value.encode('ascii', 'ignore').decode('ascii')
+            # Limit value length
+            if len(sanitized_value) > 1024:
+                sanitized_value = sanitized_value[:1024]
+            
+            if sanitized_key and sanitized_value:
+                sanitized[sanitized_key] = sanitized_value
+        
+        return sanitized
+
     def upload_file(
         self,
         file_content: bytes,
@@ -79,11 +110,18 @@ class AzureBlobService:
             )
             
             # Upload with content type and metadata
+            content_settings_obj = None
+            if content_type:
+                content_settings_obj = ContentSettings(content_type=content_type)
+            
+            # Sanitize metadata before upload
+            sanitized_metadata = self._sanitize_metadata(metadata or {})
+            
             blob_client.upload_blob(
                 file_content,
                 overwrite=True,
-                content_settings={"content_type": content_type} if content_type else None,
-                metadata=metadata or {}
+                content_settings=content_settings_obj,
+                metadata=sanitized_metadata
             )
             
             blob_url = blob_client.url
@@ -185,6 +223,20 @@ class AzureBlobService:
             raise
 
 
-# Global instance
-azure_blob_service = AzureBlobService()
+# Global instance - lazy initialization
+_azure_blob_service_instance = None
+
+def get_azure_blob_service() -> Optional[AzureBlobService]:
+    """Get or create Azure Blob Service instance (lazy initialization)"""
+    global _azure_blob_service_instance
+    if _azure_blob_service_instance is None:
+        try:
+            _azure_blob_service_instance = AzureBlobService()
+        except (ValueError, AzureError) as e:
+            logger.warning(f"Azure Blob Storage not available: {e}. File uploads will not work until Azure is configured.")
+            return None
+    return _azure_blob_service_instance
+
+# For backward compatibility - will be None if not configured
+azure_blob_service = None
 

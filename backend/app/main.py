@@ -1,6 +1,7 @@
 """
 Main FastAPI application entry point
 """
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,9 +9,17 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.api.v1 import api_router
+from app.api.v1.websocket import websocket_endpoint
+
+logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+# Log configuration at startup
+logger.info(f"SUPFile starting up...")
+logger.info(f"Allowed file extensions: {settings.ALLOWED_EXTENSIONS}")
+logger.info(f"Total extensions: {len(settings.allowed_extensions_list)}")
 
 # Initialize FastAPI app
 app = FastAPI(

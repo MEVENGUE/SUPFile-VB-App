@@ -10,6 +10,8 @@ export interface FileMetadata {
   content_type: string
   created_at: string
   upload_region?: string
+  folder_id?: number | null
+  deleted_at?: string | null
 }
 
 export interface FileListResponse {
@@ -25,9 +27,12 @@ const getAuthHeaders = () => {
 }
 
 export const fileService = {
-  async uploadFile(file: File): Promise<FileMetadata> {
+  async uploadFile(file: File, folderId?: number | null): Promise<FileMetadata> {
     const formData = new FormData()
     formData.append('file', file)
+    if (folderId !== null && folderId !== undefined) {
+      formData.append('folder_id', folderId.toString())
+    }
 
     const response = await axios.post(`${API_URL}/files/upload`, formData, {
       headers: {
@@ -38,9 +43,14 @@ export const fileService = {
     return response.data
   },
 
-  async listFiles(skip = 0, limit = 100): Promise<FileListResponse> {
+  async listFiles(folderId?: number | null, skip = 0, limit = 100): Promise<FileListResponse> {
+    const params: any = { skip, limit }
+    if (folderId !== null && folderId !== undefined) {
+      params.folder_id = folderId
+    }
+    
     const response = await axios.get(`${API_URL}/files/`, {
-      params: { skip, limit },
+      params,
       headers: getAuthHeaders(),
     })
     return response.data
@@ -72,6 +82,76 @@ export const fileService = {
 
   async deleteFile(fileId: number): Promise<void> {
     await axios.delete(`${API_URL}/files/${fileId}`, {
+      headers: getAuthHeaders(),
+    })
+  },
+
+  async getPreviewUrl(fileId: number): Promise<{ preview_url: string; content_type: string; filename: string }> {
+    const response = await axios.get(`${API_URL}/files/${fileId}/preview`, {
+      headers: getAuthHeaders(),
+    })
+    return response.data
+  },
+
+  async searchFiles(
+    query: string,
+    contentType?: string,
+    folderId?: number | null,
+    skip = 0,
+    limit = 100
+  ): Promise<FileListResponse> {
+    const params: any = { q: query, skip, limit }
+    if (contentType) {
+      params.content_type = contentType
+    }
+    if (folderId !== null && folderId !== undefined) {
+      params.folder_id = folderId
+    }
+    
+    const response = await axios.get(`${API_URL}/files/search`, {
+      params,
+      headers: getAuthHeaders(),
+    })
+    return response.data
+  },
+
+  async renameFile(fileId: number, newFilename: string): Promise<FileMetadata> {
+    const response = await axios.patch(
+      `${API_URL}/files/${fileId}/rename`,
+      { new_filename: newFilename },
+      { headers: getAuthHeaders() }
+    )
+    return response.data
+  },
+
+  async moveFile(fileId: number, folderId?: number | null): Promise<FileMetadata> {
+    const response = await axios.patch(
+      `${API_URL}/files/${fileId}/move`,
+      { folder_id: folderId === null ? null : folderId },
+      { headers: getAuthHeaders() }
+    )
+    return response.data
+  },
+
+  async listTrashFiles(skip = 0, limit = 100): Promise<FileListResponse> {
+    const response = await axios.get(`${API_URL}/files/trash`, {
+      params: { skip, limit },
+      headers: getAuthHeaders(),
+    })
+    return response.data
+  },
+
+  async restoreFile(fileId: number): Promise<FileMetadata> {
+    const response = await axios.post(
+      `${API_URL}/files/${fileId}/restore`,
+      {},
+      { headers: getAuthHeaders() }
+    )
+    return response.data
+  },
+
+  async deleteFilePermanent(fileId: number): Promise<void> {
+    await axios.delete(`${API_URL}/files/${fileId}/permanent`, {
       headers: getAuthHeaders(),
     })
   },

@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     # Database - PostgreSQL (Azure)
     DATABASE_URL: str
     
-    # Azure Blob Storage
-    AZURE_STORAGE_ACCOUNT_NAME: str
+    # Azure Blob Storage (optional for local development)
+    AZURE_STORAGE_ACCOUNT_NAME: str = ""
     AZURE_STORAGE_ACCOUNT_KEY: str = ""
     AZURE_STORAGE_CONTAINER_NAME: str = "supfile-files"
     AZURE_STORAGE_CONNECTION_STRING: str = ""
@@ -41,12 +41,23 @@ class Settings(BaseSettings):
     # Security
     BCRYPT_ROUNDS: int = 12
     MAX_FILE_SIZE_MB: int = 100
-    ALLOWED_EXTENSIONS: str = "txt,pdf,png,jpg,jpeg,gif,doc,docx,xls,xlsx,zip"
+    ALLOWED_EXTENSIONS: str = "txt,pdf,png,jpg,jpeg,gif,doc,docx,xls,xlsx,zip,mp4,avi,mkv,mov,wmv,flv,webm,mp3,wav,ogg,flac,aac,m4a,wma,ppt,pptx,rtf,csv,json,xml,html,css,js,py,java,cpp,c,md,rar,7z,tar,gz"
     
     # Azure Regions
     AZURE_PRIMARY_REGION: str = "eastus"
     AZURE_SECONDARY_REGION: str = "francecentral"
     AZURE_BACKUP_REGION: str = "canadacentral"
+    
+    # OAuth2 Providers (optional - set in .env)
+    OAUTH_GOOGLE_CLIENT_ID: str = ""
+    OAUTH_GOOGLE_CLIENT_SECRET: str = ""
+    OAUTH_GITHUB_CLIENT_ID: str = ""
+    OAUTH_GITHUB_CLIENT_SECRET: str = ""
+    OAUTH_MICROSOFT_CLIENT_ID: str = ""
+    OAUTH_MICROSOFT_CLIENT_SECRET: str = ""
+    
+    # OAuth2 Base URL (for redirects)
+    OAUTH_REDIRECT_BASE_URL: str = "http://localhost:3000"
     
     @property
     def cors_origins_list(self) -> List[str]:

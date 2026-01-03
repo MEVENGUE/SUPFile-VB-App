@@ -1,9 +1,8 @@
+# SUPFile-Vercel-App
+
 # SUPFile - Secure Cloud File Storage System
 
-> **Projet académique SUPINFO** - Système de stockage de fichiers cloud sécurisé (type Dropbox)  
-> Déployé sur **Microsoft Azure** avec architecture multi-régions
-
----
+> **Projet académique SUPINFO** - Système de stockage de fichiers cloud sécurisé (type Dropbox)
 
 ## 📋 Vue d'ensemble
 
@@ -11,63 +10,124 @@ SUPFile est une application web de stockage de fichiers cloud sécurisée permet
 - 📤 Téléverser des fichiers de manière sécurisée
 - 📥 Télécharger leurs fichiers
 - 🔐 S'authentifier via JWT
-- 📊 Visualiser leurs métadonnées de fichiers
+- 📁 Organiser leurs fichiers dans des dossiers
+- 🔍 Rechercher leurs fichiers
+- 👁️ Prévisualiser leurs fichiers
+- 🔗 Partager leurs fichiers
+- 📊 Visualiser leurs statistiques
 - 🌍 Bénéficier d'une haute disponibilité multi-régions
 
----
+## 🏗️ Architecture
 
-## 🏗️ Architecture Azure Multi-Régions
+### Structure du Projet
 
-### Régions déployées
+```
+SUPFile/
+├── frontend/          # Application React + TypeScript
+│   ├── src/
+│   │   ├── components/    # Composants React
+│   │   ├── pages/         # Pages de l'application
+│   │   ├── services/      # Services API
+│   │   ├── contexts/      # Contextes React
+│   │   ├── hooks/         # Hooks personnalisés
+│   │   └── utils/         # Utilitaires
+│   ├── public/            # Fichiers statiques
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── backend/           # API FastAPI + Python
+│   ├── app/
+│   │   ├── api/v1/        # Routes API
+│   │   ├── core/          # Configuration, sécurité
+│   │   ├── models/        # Modèles SQLAlchemy
+│   │   └── services/      # Services Azure Blob Storage
+│   ├── alembic/           # Migrations base de données
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+└── docker-compose.yml # Configuration Docker pour développement local
+```
 
-- **DC1 (Actif)** : New York → **Azure East US**
-- **DC2 (Actif)** : Paris → **Azure France Central**
-- **DC3 (Backup/PRA)** : Toronto → **Azure Canada Central**
+### Technologies Utilisées
 
-### Services Azure utilisés
+**Frontend :**
+- React 18 + TypeScript
+- Vite (build tool)
+- React Router (navigation)
+- React Query (gestion d'état)
+- Axios (requêtes HTTP)
+- React Dropzone (upload drag & drop)
+- React Toastify (notifications)
 
-- **Frontend/API** : Azure App Service (ou AKS) avec Nginx
-- **Base de données** : Azure Database for PostgreSQL
-  - Primary : East US
-  - Read Replica : France Central
-  - Backups : Canada Central
-- **Stockage** : Azure Blob Storage (geo-réplication activée)
-- **Réseau** : Azure Front Door (distribution globale)
-- **Sécurité** : Azure NSG, Firewall, HTTPS partout
-- **Monitoring** : Azure Monitor, Application Insights
-- **Backup/PRA** : Azure Backup Vault (Canada Central)
+**Backend :**
+- FastAPI (framework Python)
+- SQLAlchemy (ORM)
+- PostgreSQL (base de données)
+- Alembic (migrations)
+- Azure Blob Storage (stockage fichiers)
+- JWT (authentification)
+- Bcrypt (hachage mots de passe)
 
-Voir [ARCHITECTURE.md](./docs/ARCHITECTURE.md) pour plus de détails.
+**Infrastructure :**
+- Docker & Docker Compose
+- PostgreSQL (base de données)
+- Azure Blob Storage (stockage cloud)
 
----
-
-## 🚀 Démarrage rapide
+## 🚀 Installation et Démarrage Local
 
 ### Prérequis
 
-- Python 3.9+
+- Python 3.11+
 - Node.js 18+
 - Docker & Docker Compose
-- Azure CLI (pour le déploiement)
+- PostgreSQL (si installation manuelle)
 
-### Installation locale avec Docker
+### Installation avec Docker (Recommandé)
 
+1. **Cloner le projet**
 ```bash
-# Cloner le projet
 git clone <repository-url>
 cd SUPFile
-
-# Copier les fichiers d'environnement
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# Démarrer les services
-docker-compose up -d
-
-# L'application sera accessible sur http://localhost:3000
 ```
 
-### Installation manuelle
+2. **Configurer les variables d'environnement**
+
+Créez un fichier `.env` à la racine :
+```env
+# Backend
+DATABASE_URL=postgresql://supfile_user:supfile_password@postgres:5432/supfile
+SECRET_KEY=votre-secret-key-minimum-32-caracteres
+JWT_SECRET_KEY=votre-jwt-secret-key-minimum-32-caracteres
+
+# Azure (optionnel pour développement local)
+AZURE_STORAGE_ACCOUNT_NAME=
+AZURE_STORAGE_ACCOUNT_KEY=
+AZURE_STORAGE_CONTAINER_NAME=supfile-files
+
+# Frontend
+VITE_API_URL=http://localhost:8000/api/v1
+```
+
+3. **Démarrer les services**
+```bash
+docker-compose up -d
+```
+
+4. **Initialiser la base de données**
+```bash
+# Entrer dans le container backend
+docker exec -it supfile-backend bash
+
+# Exécuter les migrations
+alembic upgrade head
+```
+
+5. **Accéder à l'application**
+- Frontend : http://localhost:3000
+- Backend API : http://localhost:8000
+- Documentation API : http://localhost:8000/docs
+
+### Installation Manuelle
 
 #### Backend
 
@@ -76,7 +136,16 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python app.py
+
+# Créer un fichier .env avec les variables d'environnement
+cp .env.example .env
+
+# Configurer PostgreSQL localement
+# Puis exécuter les migrations
+alembic upgrade head
+
+# Démarrer le serveur
+uvicorn app.main:app --reload
 ```
 
 #### Frontend
@@ -84,70 +153,75 @@ python app.py
 ```bash
 cd frontend
 npm install
-npm start
+
+# Créer un fichier .env
+echo "VITE_API_URL=http://localhost:8000/api/v1" > .env
+
+# Démarrer le serveur de développement
+npm run dev
 ```
 
----
+## 📚 Fonctionnalités
 
-## 📁 Structure du projet
+### Authentification
+- ✅ Inscription et connexion avec email/mot de passe
+- ✅ Authentification JWT sécurisée
+- ✅ Hachage des mots de passe avec bcrypt
+- ⚠️ OAuth2 (Google, GitHub, Microsoft) - En développement
 
-```
-SUPFile/
-├── backend/                 # API FastAPI
-│   ├── app/
-│   │   ├── api/            # Routes API
-│   │   ├── core/           # Configuration, sécurité
-│   │   ├── models/         # Modèles SQLAlchemy
-│   │   ├── services/       # Services Azure Blob Storage
-│   │   └── utils/          # Utilitaires
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/                # Application React
-│   ├── src/
-│   │   ├── components/
-│   │   ├── services/
-│   │   └── utils/
-│   ├── Dockerfile
-│   ├── package.json
-│   └── .env.example
-├── docker-compose.yml       # Développement local
-├── azure/                   # Configurations Azure
-│   ├── app-service/
-│   ├── aks/
-│   └── front-door/
-├── docs/                    # Documentation
-│   ├── ARCHITECTURE.md
-│   ├── DEPLOYMENT.md
-│   └── SECURITY.md
-└── README.md
-```
+### Gestion des Fichiers
+- ✅ Upload de fichiers (drag & drop)
+- ✅ Téléchargement de fichiers
+- ✅ Suppression de fichiers
+- ✅ Renommage de fichiers
+- ✅ Déplacement de fichiers
+- ✅ Recherche de fichiers
+- ✅ Prévisualisation (images, PDF, texte)
+- ✅ Partage de fichiers (liens publics)
+- ✅ Métadonnées des fichiers
 
----
+### Gestion des Dossiers
+- ✅ Création de dossiers
+- ✅ Navigation dans les dossiers (breadcrumbs)
+- ✅ Renommage de dossiers
+- ✅ Déplacement de dossiers
+- ✅ Suppression de dossiers
+- ✅ Arborescence de dossiers
+
+### Dashboard
+- ✅ Statistiques des fichiers
+- ✅ Espace de stockage utilisé
+- ✅ Liste des fichiers récents
+- ✅ Vue d'ensemble de l'activité
+
+### Autres Fonctionnalités
+- ✅ Thème clair/sombre
+- ✅ Interface responsive
+- ✅ Notifications toast
+- ✅ Pagination
+- ✅ Historique des modifications
+- ✅ Commentaires sur les fichiers
+- ⚠️ Synchronisation temps réel (WebSocket) - En développement
 
 ## 🔐 Sécurité
 
-- ✅ Authentification JWT
-- ✅ HTTPS partout (TLS 1.2+)
+- ✅ Authentification JWT sécurisée
+- ✅ Hachage des mots de passe (bcrypt)
 - ✅ Validation des entrées
-- ✅ Contrôle d'accès basé sur les rôles
+- ✅ Protection CORS
+- ✅ HTTPS (en production)
 - ✅ Secrets via variables d'environnement
-- ✅ Protection contre les attaques (rate limiting, CORS)
+- ✅ Contrôle d'accès basé sur les utilisateurs
 
-Voir [docs/SECURITY.md](./docs/SECURITY.md) pour plus de détails.
+## 📖 Documentation Complète
 
----
-
-## 📊 Plan de Reprise d'Activité (PRA)
-
-- **RPO** : 1 heure (Recovery Point Objective)
-- **RTO** : 4 heures (Recovery Time Objective)
-- **Backups** : Quotidiennes automatiques vers Canada Central
-- **Geo-réplication** : Blob Storage répliqué entre East US et France Central
-
-Voir [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) pour le plan complet.
-
----
+Consultez [DOCUMENTATION.md](./DOCUMENTATION.md) pour :
+- Architecture détaillée
+- Guide de déploiement
+- Sécurité et bonnes pratiques
+- API Reference
+- Historique des modifications
+- Roadmap
 
 ## 🧪 Tests
 
@@ -161,21 +235,42 @@ cd frontend
 npm test
 ```
 
----
+## 📝 Scripts Disponibles
 
-## 📚 Documentation
+### Backend
+```bash
+# Démarrer le serveur
+uvicorn app.main:app --reload
 
-- [Architecture détaillée](./docs/ARCHITECTURE.md)
-- [Guide de déploiement Azure](./docs/DEPLOYMENT.md)
-- [Sécurité et bonnes pratiques](./docs/SECURITY.md)
+# Migrations
+alembic revision --autogenerate -m "Description"
+alembic upgrade head
+alembic downgrade -1
+```
 
----
+### Frontend
+```bash
+# Développement
+npm run dev
+
+# Build production
+npm run build
+
+# Preview build
+npm run preview
+
+# Linter
+npm run lint
+```
 
 ## 🤝 Contribution
 
 Ce projet est un projet académique SUPINFO. Pour toute question, contactez l'équipe projet.
 
----
+## 👥 Auteurs
+
+- MEVENGUE Franck
+- Nadia Loukdache
 
 ## 📄 Licence
 
@@ -183,7 +278,4 @@ Projet académique - Tous droits réservés
 
 ---
 
-## 👥 Auteurs
-
-Équipe SUPFile - SUPINFO 2024
-
+**Note :** Ce projet est optimisé pour un déploiement sur Vercel (frontend) et une infrastructure cloud (backend).
