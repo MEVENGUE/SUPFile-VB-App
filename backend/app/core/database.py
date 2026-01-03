@@ -9,12 +9,23 @@ from app.core.config import settings
 
 # Create database engine
 # Azure PostgreSQL requires SSL mode
+# Railway PostgreSQL may also require SSL
 database_url = settings.DATABASE_URL
-if "postgres.database.azure.com" in database_url and "sslmode" not in database_url:
-    if "?" in database_url:
-        database_url += "&sslmode=require"
-    else:
-        database_url += "?sslmode=require"
+
+# Add SSL mode for Azure or Railway PostgreSQL
+if database_url:
+    # Check if it's Azure PostgreSQL
+    if "postgres.database.azure.com" in database_url and "sslmode" not in database_url:
+        if "?" in database_url:
+            database_url += "&sslmode=require"
+        else:
+            database_url += "?sslmode=require"
+    # Check if it's Railway PostgreSQL (usually ends with .railway.app or contains railway)
+    elif ("railway" in database_url.lower() or ".railway.app" in database_url) and "sslmode" not in database_url:
+        if "?" in database_url:
+            database_url += "&sslmode=require"
+        else:
+            database_url += "?sslmode=require"
 
 engine = create_engine(
     database_url,
