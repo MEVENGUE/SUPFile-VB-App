@@ -56,8 +56,13 @@ class Settings(BaseSettings):
     OAUTH_MICROSOFT_CLIENT_ID: str = ""
     OAUTH_MICROSOFT_CLIENT_SECRET: str = ""
     
-    # OAuth2 Base URL (for redirects)
-    OAUTH_REDIRECT_BASE_URL: str = "http://localhost:3000"
+    # OAuth2 Base URL (for redirects to frontend after OAuth)
+    # In production, this should be your Vercel frontend URL (e.g., https://supfile-webapp.vercel.app)
+    OAUTH_REDIRECT_BASE_URL: str = os.getenv("OAUTH_REDIRECT_BASE_URL", "http://localhost:3000")
+    
+    # OAuth2 Callback Base URL (backend URL for OAuth callbacks)
+    # In production, this should be your Railway backend URL (e.g., https://supfile-vercel-app-production.up.railway.app)
+    OAUTH_CALLBACK_BASE_URL: str = os.getenv("OAUTH_CALLBACK_BASE_URL", "http://localhost:8000")
     
     @property
     def cors_origins_list(self) -> List[str]:
@@ -98,4 +103,26 @@ if not settings.SECRET_KEY:
 
 if not settings.JWT_SECRET_KEY:
     raise ValueError("JWT_SECRET_KEY environment variable is required")
+
+# Detect production environment
+IS_PRODUCTION = (
+    os.getenv("APP_ENV", "development").lower() in ["production", "prod"] 
+    or os.getenv("RAILWAY_ENVIRONMENT") is not None
+    or os.getenv("VERCEL") is not None
+)
+
+# Validate OAuth URLs in production (prevent localhost in production)
+if IS_PRODUCTION:
+    if "localhost" in settings.OAUTH_REDIRECT_BASE_URL:
+        raise ValueError(
+            "❌ OAUTH_REDIRECT_BASE_URL must be set to your Vercel frontend URL in production. "
+            f"Current value: {settings.OAUTH_REDIRECT_BASE_URL}\n"
+            "📝 Configure in Railway: OAUTH_REDIRECT_BASE_URL=https://supfile-webapp.vercel.app"
+        )
+    if "localhost" in settings.OAUTH_CALLBACK_BASE_URL:
+        raise ValueError(
+            "❌ OAUTH_CALLBACK_BASE_URL must be set to your Railway backend URL in production. "
+            f"Current value: {settings.OAUTH_CALLBACK_BASE_URL}\n"
+            "📝 Configure in Railway: OAUTH_CALLBACK_BASE_URL=https://supfile-vercel-app-production.up.railway.app"
+        )
 
