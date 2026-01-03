@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { shareService, ShareAccessResponse } from '../services/shareService'
-import { fileService } from '../services/fileService'
+import { shareService, type ShareAccessResponse } from '../services/shareService'
 import { toast } from 'react-toastify'
 import FileViewer from '../components/FileViewer'
 import './SharePage.css'
