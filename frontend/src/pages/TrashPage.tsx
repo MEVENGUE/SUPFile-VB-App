@@ -6,13 +6,11 @@ import { folderService, FolderMetadata } from '../services/folderService'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { getFileIcon } from '../utils/fileIcons'
-import { useAuth } from '../contexts/AuthContext'
 import Sidebar from '../components/Sidebar'
 import './TrashPage.css'
 
 const TrashPage = () => {
   const queryClient = useQueryClient()
-  const { user } = useAuth()
   const [selectedType, setSelectedType] = useState<'all' | 'files' | 'folders'>('all')
 
   // Fetch trash files
