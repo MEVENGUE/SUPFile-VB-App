@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { toast } from 'react-toastify'
-import { folderService, FolderMetadata } from '../services/folderService'
+import { folderService } from '../services/folderService'
 import { useQuery } from '@tanstack/react-query'
 import './MoveModal.css'
 
