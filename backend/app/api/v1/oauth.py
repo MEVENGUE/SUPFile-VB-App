@@ -95,6 +95,7 @@ async def oauth_authorize(provider: str, request: Request):
         # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
         callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://')
     redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
+    logger.info(f"OAuth authorize - redirect_uri: {redirect_uri}")
 
     # Build authorization URL
     params = {
@@ -158,6 +159,9 @@ async def oauth_callback(
             # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
             callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://')
         redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
+        logger.info(f"OAuth callback - redirect_uri: {redirect_uri}")
+        logger.info(f"OAuth callback - OAUTH_CALLBACK_BASE_URL: {settings.OAUTH_CALLBACK_BASE_URL}")
+        logger.info(f"OAuth callback - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
 
         # Exchange code for token
         token_data = {
