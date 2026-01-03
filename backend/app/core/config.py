@@ -14,14 +14,14 @@ class Settings(BaseSettings):
     APP_NAME: str = "SUPFile"
     APP_ENV: str = "development"
     DEBUG: bool = True
-    SECRET_KEY: str
+    SECRET_KEY: str = ""
     
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # Database - PostgreSQL (Azure)
-    DATABASE_URL: str
+    # Database - PostgreSQL (Azure or Railway)
+    DATABASE_URL: str = ""
     
     # Azure Blob Storage (optional for local development)
     AZURE_STORAGE_ACCOUNT_NAME: str = ""
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     AZURE_STORAGE_CONNECTION_STRING: str = ""
     
     # JWT Authentication
-    JWT_SECRET_KEY: str
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -80,5 +80,22 @@ class Settings(BaseSettings):
 
 
 # Global settings instance
+# Validate required settings at startup
 settings = Settings()
+
+# Validate required environment variables
+if not settings.DATABASE_URL:
+    # Try to get from environment directly (for Railway)
+    settings.DATABASE_URL = os.getenv("DATABASE_URL", "")
+    if not settings.DATABASE_URL:
+        raise ValueError(
+            "DATABASE_URL environment variable is required. "
+            "On Railway, make sure to reference it as ${{Postgres.DATABASE_URL}}"
+        )
+
+if not settings.SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is required")
+
+if not settings.JWT_SECRET_KEY:
+    raise ValueError("JWT_SECRET_KEY environment variable is required")
 
