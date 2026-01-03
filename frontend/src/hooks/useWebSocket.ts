@@ -19,7 +19,7 @@ export const useWebSocket = (): UseWebSocketReturn => {
   const [isConnected, setIsConnected] = useState(false)
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const reconnectTimeoutRef = useRef<number | null>(null)
   const reconnectAttempts = useRef(0)
   const maxReconnectAttempts = 5
 
@@ -29,7 +29,7 @@ export const useWebSocket = (): UseWebSocketReturn => {
     }
 
     try {
-      const wsUrl = process.env.REACT_APP_WS_URL || 
+      const wsUrl = import.meta.env.VITE_WS_URL || 
         `ws://${window.location.hostname}:8000/api/v1/ws?token=${token}`
       
       const ws = new WebSocket(wsUrl)
