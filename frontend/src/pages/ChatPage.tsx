@@ -5,7 +5,6 @@ import Sidebar from '../components/Sidebar'
 import './ChatPage.css'
 
 const ChatPage = () => {
-  const { user } = useAuth()
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
     { role: 'assistant', content: 'Bonjour ! Je suis votre assistant IA. Comment puis-je vous aider avec SUPFile ?' }
   ])
@@ -23,6 +22,15 @@ const ChatPage = () => {
 
   const sendMessage = async () => {
     if (!inputMessage.trim() || loading) return
+
+    // Vérifier que la clé API OpenAI est configurée
+    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Erreur : La clé API OpenAI n\'est pas configurée. Veuillez contacter l\'administrateur.'
+      }])
+      return
+    }
 
     const userMessage = inputMessage.trim()
     setInputMessage('')
@@ -47,7 +55,7 @@ const ChatPage = () => {
         },
         {
           headers: {
-            'Authorization': `Bearer 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`,
+            'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY || ''}`,
             'Content-Type': 'application/json'
           }
         }
