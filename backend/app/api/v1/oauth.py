@@ -2,7 +2,7 @@
 OAuth2 authentication endpoints
 Supports Google, GitHub, and Microsoft OAuth2
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -68,7 +68,7 @@ def get_oauth_client_secret(provider: str) -> str:
 
 
 @router.get("/{provider}/authorize")
-async def oauth_authorize(provider: str):
+async def oauth_authorize(provider: str, request: Request):
     """
     Initiate OAuth2 authorization flow
     Redirects user to OAuth provider's login page
@@ -87,7 +87,14 @@ async def oauth_authorize(provider: str):
         )
 
     provider_config = OAUTH_PROVIDERS[provider]
-    redirect_uri = f"{settings.OAUTH_REDIRECT_BASE_URL}/api/v1/auth/{provider}/callback"
+    # Use OAUTH_CALLBACK_BASE_URL if set, otherwise derive from OAUTH_REDIRECT_BASE_URL
+    if settings.OAUTH_CALLBACK_BASE_URL:
+        callback_base = settings.OAUTH_CALLBACK_BASE_URL
+    else:
+        # Fallback: try to derive backend URL from frontend URL
+        # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
+        callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://')
+    redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
 
     # Build authorization URL
     params = {
@@ -112,6 +119,7 @@ async def oauth_callback(
     code: Optional[str] = None,
     error: Optional[str] = None,
     state: Optional[str] = None,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -141,7 +149,16 @@ async def oauth_callback(
         provider_config = OAUTH_PROVIDERS[provider]
         client_id = get_oauth_client_id(provider)
         client_secret = get_oauth_client_secret(provider)
-        redirect_uri = f"{settings.OAUTH_REDIRECT_BASE_URL}/api/v1/auth/{provider}/callback"
+        # Use OAUTH_CALLBACK_BASE_URL if set, otherwise use the current request's base URL
+        if settings.OAUTH_CALLBACK_BASE_URL:
+            callback_base = settings.OAUTH_CALLBACK_BASE_URL
+        elif request:
+            base_url = str(request.base_url).rstrip('/')
+            callback_base = base_url
+        else:
+            # Fallback to OAUTH_REDIRECT_BASE_URL (for backward compatibility)
+            callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('http://', 'https://')
+        redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
 
         # Exchange code for token
         token_data = {
