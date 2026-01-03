@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -6,7 +5,7 @@ import axios from 'axios'
 import { getAuthHeaders } from '../services/authService'
 import './FileHistory.css'
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
 interface HistoryItem {
   id: number
