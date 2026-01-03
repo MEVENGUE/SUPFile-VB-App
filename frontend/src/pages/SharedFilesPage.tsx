@@ -20,7 +20,7 @@ const SharedFilesPage = () => {
     mutationFn: async (shareId: number) => {
       const token = localStorage.getItem('token')
       await axios.delete(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/share/${shareId}`,
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/share/${shareId}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -39,7 +39,7 @@ const SharedFilesPage = () => {
     mutationFn: async ({ shareId, isActive }: { shareId: number; isActive: boolean }) => {
       const token = localStorage.getItem('token')
       await axios.patch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/share/${shareId}/toggle`,
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/share/${shareId}/toggle`,
         { is_active: !isActive },
         {
           headers: { Authorization: `Bearer ${token}` }
