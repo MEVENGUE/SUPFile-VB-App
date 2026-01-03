@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { useAuth } from '../contexts/AuthContext'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import './ChatPage.css'
