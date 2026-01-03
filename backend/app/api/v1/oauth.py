@@ -127,12 +127,19 @@ async def oauth_callback(
     OAuth2 callback endpoint
     Handles the redirect from OAuth provider after user authorization
     """
+    # Log all query parameters for debugging
+    if request:
+        logger.info(f"OAuth callback - Full URL: {request.url}")
+        logger.info(f"OAuth callback - Query params: {dict(request.query_params)}")
+    
     if provider not in OAUTH_PROVIDERS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported OAuth provider: {provider}"
         )
 
+    logger.info(f"OAuth callback received - provider: {provider}, code: {code is not None}, error: {error}, state: {state}")
+    
     if error:
         logger.error(f"OAuth2 error from {provider}: {error}")
         return RedirectResponse(
@@ -140,9 +147,13 @@ async def oauth_callback(
         )
 
     if not code:
+        logger.error(f"OAuth2 callback missing code - provider: {provider}")
+        if request:
+            logger.error(f"OAuth2 callback - Query params: {dict(request.query_params)}")
+            logger.error(f"OAuth2 callback - Full URL: {request.url}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Authorization code not provided"
+            detail="Authorization code not provided. Please initiate OAuth flow from the login page."
         )
 
     try:
