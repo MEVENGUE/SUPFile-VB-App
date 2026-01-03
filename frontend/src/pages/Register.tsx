@@ -97,7 +97,7 @@ const Register = () => {
 
         <div className="oauth-buttons">
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/auth/google/authorize`}
+            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/google/authorize`}
             className="oauth-button oauth-google"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -109,7 +109,7 @@ const Register = () => {
             Continuer avec Google
           </a>
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/auth/github/authorize`}
+            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/github/authorize`}
             className="oauth-button oauth-github"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -118,7 +118,7 @@ const Register = () => {
             Continuer avec GitHub
           </a>
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/auth/microsoft/authorize`}
+            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/microsoft/authorize`}
             className="oauth-button oauth-microsoft"
           >
             <svg width="18" height="18" viewBox="0 0 23 23" fill="none">
