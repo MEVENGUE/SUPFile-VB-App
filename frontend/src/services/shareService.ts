@@ -38,10 +38,13 @@ export interface ShareAccessResponse {
     original_filename: string
     content_type?: string
     size: number
+    file_size?: number
+    created_at?: string
   }
   folder?: {
     id: number
     name: string
+    created_at?: string
   }
   share_link: ShareLink
 }
