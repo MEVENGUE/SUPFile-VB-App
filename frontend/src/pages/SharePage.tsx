@@ -160,10 +160,12 @@ const SharePage: React.FC = () => {
                 <div className="file-details">
                   <h2>{shareData.file.original_filename}</h2>
                   <div className="file-meta">
-                    <span>Taille: {formatFileSize(shareData.file.file_size)}</span>
+                    <span>Taille: {formatFileSize(shareData.file.file_size || shareData.file.size)}</span>
                     <span>Type: {shareData.file.content_type || 'Inconnu'}</span>
                     <span>
-                      Créé le: {new Date(shareData.file.created_at).toLocaleDateString('fr-FR')}
+                      {shareData.file.created_at && (
+                        <>Créé le: {new Date(shareData.file.created_at).toLocaleDateString('fr-FR')}</>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -192,7 +194,9 @@ const SharePage: React.FC = () => {
                   <h2>{shareData.folder.name}</h2>
                   <div className="folder-meta">
                     <span>
-                      Créé le: {new Date(shareData.folder.created_at).toLocaleDateString('fr-FR')}
+                      {shareData.folder.created_at && (
+                        <>Créé le: {new Date(shareData.folder.created_at).toLocaleDateString('fr-FR')}</>
+                      )}
                     </span>
                   </div>
                 </div>
