@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { shareService, ShareLinkMetadata } from '../services/shareService'
+import { shareService, type ShareLinkMetadata } from '../services/shareService'
 import { toast } from 'react-toastify'
 import './ShareModal.css'
 
