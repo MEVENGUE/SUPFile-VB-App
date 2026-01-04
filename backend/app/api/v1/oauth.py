@@ -497,29 +497,57 @@ async def oauth_callback(
         access_token_jwt = create_access_token(data={"sub": str(user.id), "username": user.username})
         refresh_token_jwt = create_refresh_token(data={"sub": str(user.id), "username": user.username})
 
-        # Store tokens in temporary cache with short-lived token to avoid long URLs
-        # This solves ERR_INVALID_REDIRECT issues with Microsoft OAuth
-        temp_token = str(uuid.uuid4())
-        expires_at = time.time() + TOKEN_CACHE_EXPIRY
-        _oauth_token_cache[temp_token] = {
-            "access_token": access_token_jwt,
-            "refresh_token": refresh_token_jwt,
-            "expires_at": expires_at
-        }
-        
-        # Clean old tokens from cache
-        current_time = time.time()
-        expired_tokens = [token for token, data in _oauth_token_cache.items() if data["expires_at"] < current_time]
-        for token in expired_tokens:
-            _oauth_token_cache.pop(token, None)
-        
-        # Redirect to frontend with short temporary token
-        redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback?token={temp_token}"
-        logger.info(f"OAuth success - redirecting to frontend with temp token (URL length: {len(redirect_url)})")
-        logger.info(f"OAuth success - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
-        
-        # Use simple HTTP redirect (no long URLs, so no ERR_INVALID_REDIRECT)
-        return RedirectResponse(url=redirect_url, status_code=302)
+        # For Microsoft, use temporary token cache to avoid ERR_INVALID_REDIRECT
+        # For Google and GitHub, use fragment URL with JavaScript redirect (works well)
+        if provider == 'microsoft':
+            # Store tokens in temporary cache with short-lived token to avoid long URLs
+            temp_token = str(uuid.uuid4())
+            expires_at = time.time() + TOKEN_CACHE_EXPIRY
+            _oauth_token_cache[temp_token] = {
+                "access_token": access_token_jwt,
+                "refresh_token": refresh_token_jwt,
+                "expires_at": expires_at
+            }
+            
+            # Clean old tokens from cache
+            current_time = time.time()
+            expired_tokens = [token for token, data in _oauth_token_cache.items() if data["expires_at"] < current_time]
+            for token in expired_tokens:
+                _oauth_token_cache.pop(token, None)
+            
+            # Redirect to frontend with short temporary token
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback?token={temp_token}"
+            logger.info(f"OAuth success (Microsoft) - redirecting to frontend with temp token (URL length: {len(redirect_url)})")
+            return RedirectResponse(url=redirect_url, status_code=302)
+        else:
+            # For Google and GitHub: use fragment URL with JavaScript redirect
+            # This avoids ERR_INVALID_REDIRECT while keeping the flow simple
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback#access_token={quote(access_token_jwt, safe='')}&refresh_token={quote(refresh_token_jwt, safe='')}"
+            logger.info(f"OAuth success ({provider}) - redirecting to frontend with fragment (URL length: {len(redirect_url)})")
+            logger.info(f"OAuth success - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
+            
+            # Use HTML response with JavaScript redirect to preserve URL fragment
+            # This avoids ERR_INVALID_REDIRECT errors that can occur with HTTP redirects and fragments
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Redirection...</title>
+            </head>
+            <body>
+                <p>Connexion réussie! Redirection en cours...</p>
+                <script>
+                    window.location.href = {repr(redirect_url)};
+                </script>
+                <noscript>
+                    <meta http-equiv="refresh" content="0; url={redirect_url}">
+                    <p>Si la redirection ne fonctionne pas, <a href="{redirect_url}">cliquez ici</a>.</p>
+                </noscript>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content, status_code=200)
 
     except httpx.HTTPStatusError as e:
         error_text = e.response.text if hasattr(e, 'response') else str(e)
