@@ -129,43 +129,6 @@ async def oauth_authorize(provider: str, request: Request):
     return RedirectResponse(url=auth_url)
 
 
-@router.get("/oauth/token/{temp_token}")
-async def exchange_oauth_token(
-    temp_token: str
-):
-    """
-    Exchange temporary OAuth token for JWT tokens
-    This endpoint is called by the frontend after OAuth redirect
-    """
-    # Check if token exists in cache
-    if temp_token not in _oauth_token_cache:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Token not found or expired"
-        )
-    
-    token_data = _oauth_token_cache[temp_token]
-    
-    # Check if token has expired
-    if time.time() > token_data["expires_at"]:
-        _oauth_token_cache.pop(temp_token, None)
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Token expired"
-        )
-    
-    # Remove token from cache (one-time use)
-    access_token = token_data["access_token"]
-    refresh_token = token_data["refresh_token"]
-    _oauth_token_cache.pop(temp_token, None)
-    
-    return JSONResponse(content={
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    })
-
-
 @router.get("/{provider}/callback")
 @router.post("/{provider}/callback")
 async def oauth_callback(
@@ -598,4 +561,49 @@ async def oauth_callback(
         error_message_encoded = quote(error_message, safe='')
         redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_error&message={error_message_encoded}"
         return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@router.get("/exchange-token/{temp_token}")
+async def exchange_oauth_token(
+    temp_token: str
+):
+    """
+    Exchange temporary OAuth token for JWT tokens
+    This endpoint is called by the frontend after OAuth redirect (Microsoft only)
+    IMPORTANT: Route name is /exchange-token/ to avoid conflict with /{provider}/callback
+    """
+    logger.info(f"OAuth token exchange request - temp_token: {temp_token[:20]}...")
+    
+    # Check if token exists in cache
+    if temp_token not in _oauth_token_cache:
+        logger.warning(f"OAuth token exchange - Token not found in cache: {temp_token[:20]}...")
+        logger.info(f"OAuth token exchange - Cache size: {len(_oauth_token_cache)}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Token not found or expired"
+        )
+    
+    token_data = _oauth_token_cache[temp_token]
+    
+    # Check if token has expired
+    if time.time() > token_data["expires_at"]:
+        _oauth_token_cache.pop(temp_token, None)
+        logger.warning(f"OAuth token exchange - Token expired: {temp_token[:20]}...")
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Token expired"
+        )
+    
+    # Remove token from cache (one-time use)
+    access_token = token_data["access_token"]
+    refresh_token = token_data["refresh_token"]
+    _oauth_token_cache.pop(temp_token, None)
+    
+    logger.info(f"OAuth token exchange - Success, token removed from cache")
+    
+    return JSONResponse(content={
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    })
 
