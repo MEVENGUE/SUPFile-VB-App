@@ -50,7 +50,7 @@ OAUTH_PROVIDERS = {
         'authorize_url': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
         'token_url': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
         'userinfo_url': 'https://graph.microsoft.com/v1.0/me',
-        'scopes': ['openid', 'email', 'profile', 'User.Read'],
+        'scopes': ['openid', 'email', 'profile', 'User.Read', 'offline_access'],
     },
 }
 
@@ -334,18 +334,28 @@ async def oauth_callback(
         async with httpx.AsyncClient() as client:
             userinfo_response = await client.get(
                 provider_config['userinfo_url'],
-                headers=userinfo_headers
+                headers=userinfo_headers,
+                timeout=30.0
             )
             
             # Log response for debugging
             if userinfo_response.status_code != 200:
                 logger.error(f"OAuth2 userinfo error from {provider}: Status {userinfo_response.status_code}, Response: {userinfo_response.text}")
+                error_message_encoded = quote(f"Erreur lors de la récupération des informations utilisateur: {userinfo_response.status_code}", safe='')
+                redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_userinfo_error&message={error_message_encoded}"
+                return RedirectResponse(url=redirect_url, status_code=302)
             
-            userinfo_response.raise_for_status()
-            userinfo = userinfo_response.json()
+            try:
+                userinfo = userinfo_response.json()
+            except Exception as e:
+                logger.error(f"OAuth2 userinfo JSON parse error from {provider}: {str(e)}, Response: {userinfo_response.text}")
+                error_message_encoded = quote("Réponse invalide du serveur OAuth.", safe='')
+                redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_userinfo_error&message={error_message_encoded}"
+                return RedirectResponse(url=redirect_url, status_code=302)
             
             # Log userinfo for debugging (without sensitive data)
             logger.info(f"OAuth2 userinfo from {provider}: {list(userinfo.keys())}")
+            logger.info(f"OAuth2 userinfo content (sanitized): email={userinfo.get('email') or userinfo.get('mail') or userinfo.get('userPrincipalName')}, id={userinfo.get('id') or userinfo.get('objectId')}")
 
         # Extract user information based on provider
         if provider == 'google':
@@ -374,28 +384,45 @@ async def oauth_callback(
             email = (
                 userinfo.get('mail') or 
                 userinfo.get('userPrincipalName') or 
-                userinfo.get('otherMails', [None])[0] if userinfo.get('otherMails') else None
+                (userinfo.get('otherMails', [None])[0] if userinfo.get('otherMails') and len(userinfo.get('otherMails', [])) > 0 else None)
             )
             
             # Generate username from email or display name
             if email:
                 username = email.split('@')[0]
+                # Remove special characters and make lowercase
+                username = ''.join(c for c in username if c.isalnum() or c in ['_', '-']).lower()
             else:
-                username = userinfo.get('displayName', 'user').replace(' ', '_').lower()
+                display_name = userinfo.get('displayName') or userinfo.get('givenName', '') or 'user'
+                username = display_name.replace(' ', '_').lower()
                 # Remove special characters
                 username = ''.join(c for c in username if c.isalnum() or c in ['_', '-'])
             
-            full_name = userinfo.get('displayName') or userinfo.get('givenName', '') + ' ' + userinfo.get('surname', '')
+            # Get full name
+            full_name = userinfo.get('displayName')
+            if not full_name:
+                given_name = userinfo.get('givenName', '')
+                surname = userinfo.get('surname', '')
+                full_name = f"{given_name} {surname}".strip() if given_name or surname else None
+            
+            # Get provider user ID (can be 'id' or 'objectId' depending on API version)
             provider_user_id = userinfo.get('id') or userinfo.get('objectId')
             
             # Log extracted info for debugging
-            logger.info(f"Microsoft OAuth extracted - email: {email}, username: {username}, id: {provider_user_id}")
+            logger.info(f"Microsoft OAuth extracted - email: {email}, username: {username}, id: {provider_user_id}, full_name: {full_name}")
+            logger.info(f"Microsoft OAuth userinfo keys: {list(userinfo.keys())}")
 
-        if not email or not provider_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to retrieve user information from OAuth provider"
-            )
+        if not email:
+            logger.error(f"OAuth2 - No email found for {provider}. Userinfo keys: {list(userinfo.keys())}")
+            error_message_encoded = quote("Impossible de récupérer l'email depuis le compte Microsoft. Vérifiez que votre compte Microsoft a un email associé.", safe='')
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_no_email&message={error_message_encoded}"
+            return RedirectResponse(url=redirect_url, status_code=302)
+        
+        if not provider_user_id:
+            logger.error(f"OAuth2 - No user ID found for {provider}. Userinfo keys: {list(userinfo.keys())}")
+            error_message_encoded = quote("Impossible de récupérer l'ID utilisateur depuis le compte Microsoft.", safe='')
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_no_user_id&message={error_message_encoded}"
+            return RedirectResponse(url=redirect_url, status_code=302)
 
         # Check if OAuth account already exists
         oauth_account = db.query(OAuthAccount).filter(
