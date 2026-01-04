@@ -16,13 +16,37 @@
       // Enregistrer le Service Worker pour PWA
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
             .then((registration) => {
               console.log('Service Worker enregistré avec succès:', registration.scope);
+              
+              // Vérifier les mises à jour toutes les heures
+              setInterval(() => {
+                registration.update();
+              }, 3600000);
+              
+              // Écouter les mises à jour du service worker
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                if (newWorker) {
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'activated') {
+                      // Le nouveau service worker est activé, recharger la page
+                      console.log('Nouveau Service Worker activé, rechargement de la page...');
+                      window.location.reload();
+                    }
+                  });
+                }
+              });
             })
             .catch((error) => {
               console.log('Échec de l\'enregistrement du Service Worker:', error);
             });
+          
+          // Vérifier s'il y a un nouveau service worker en attente
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            window.location.reload();
+          });
         });
       }
     </script>
