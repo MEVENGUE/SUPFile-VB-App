@@ -9,9 +9,15 @@ const OAuthCallback = () => {
   const { setTokens } = useAuth()
 
   useEffect(() => {
-    const accessToken = searchParams.get('access_token')
-    const refreshToken = searchParams.get('refresh_token')
-    const error = searchParams.get('error')
+    // Try to get tokens from URL fragment first (#access_token=...&refresh_token=...)
+    // This is used for OAuth redirects to avoid ERR_INVALID_REDIRECT with long URLs
+    const hash = window.location.hash.substring(1) // Remove the # symbol
+    const hashParams = new URLSearchParams(hash)
+    
+    // Also check query params for backward compatibility
+    const accessToken = hashParams.get('access_token') || searchParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token')
+    const error = hashParams.get('error') || searchParams.get('error')
 
     if (error) {
       toast.error('Erreur lors de la connexion OAuth2')
