@@ -159,6 +159,15 @@ async def oauth_callback(
         code = request.query_params.get("code") or code
         error = request.query_params.get("error") or error
         state = request.query_params.get("state") or state
+        
+        # Special handling for Microsoft: if GET request arrives after POST (form_post mode),
+        # it might be a browser redirect/follow-up without the code.
+        # Check if this is Microsoft and if we already processed a POST for this session
+        if provider == 'microsoft' and not code and not error:
+            logger.info(f"OAuth callback - GET request for Microsoft without code (likely follow-up after form_post). Redirecting to frontend.")
+            # Redirect to frontend login page - the POST should have already handled the OAuth flow
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login"
+            return RedirectResponse(url=redirect_url, status_code=302)
     
     # Log all parameters for debugging
     logger.info(f"OAuth callback - Method: {request.method}, Full URL: {request.url}")
@@ -199,6 +208,13 @@ async def oauth_callback(
         return RedirectResponse(url=redirect_url, status_code=302)
 
     if not code:
+        # For Microsoft with form_post, if we get here it means POST already processed
+        # For other providers, this is an error
+        if provider == 'microsoft' and request.method == 'GET':
+            logger.info(f"OAuth callback - Microsoft GET without code (POST already processed). Redirecting to frontend.")
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login"
+            return RedirectResponse(url=redirect_url, status_code=302)
+        
         logger.error(f"OAuth2 callback missing code - provider: {provider}")
         if request:
             logger.error(f"OAuth2 callback - Query params: {dict(request.query_params)}")
