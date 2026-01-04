@@ -433,9 +433,11 @@ async def oauth_callback(
         access_token_jwt = create_access_token(data={"sub": str(user.id), "username": user.username})
         refresh_token_jwt = create_refresh_token(data={"sub": str(user.id), "username": user.username})
 
-        # Redirect to frontend with tokens
-        redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback?access_token={quote(access_token_jwt, safe='')}&refresh_token={quote(refresh_token_jwt, safe='')}"
-        logger.info(f"OAuth success - redirecting to: {redirect_url[:100]}...")  # Log truncated for security
+        # Redirect to frontend with tokens using URL fragment (#) instead of query params
+        # This avoids ERR_INVALID_REDIRECT errors with long URLs
+        # The fragment is not sent to the server but is available in the browser
+        redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback#access_token={quote(access_token_jwt, safe='')}&refresh_token={quote(refresh_token_jwt, safe='')}"
+        logger.info(f"OAuth success - redirecting to frontend (URL length: {len(redirect_url)})")
         logger.info(f"OAuth success - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
         return RedirectResponse(url=redirect_url, status_code=302)
 
