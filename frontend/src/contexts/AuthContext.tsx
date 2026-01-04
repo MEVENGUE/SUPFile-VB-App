@@ -16,6 +16,7 @@ interface AuthContextType {
   logout: () => void
   setTokens: (accessToken: string, refreshToken: string) => Promise<void>
   isAuthenticated: boolean
+  isLoading: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -23,18 +24,30 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
+  const [isLoading, setIsLoading] = useState<boolean>(true)
 
   useEffect(() => {
-    if (token) {
-      // Verify token and get user info
-      authService.getCurrentUser(token)
-        .then(setUser)
-        .catch(() => {
+    const checkAuth = async () => {
+      const storedToken = localStorage.getItem('token')
+      if (storedToken) {
+        try {
+          // Verify token and get user info
+          const userData = await authService.getCurrentUser(storedToken)
+          setUser(userData)
+          setToken(storedToken)
+        } catch (error) {
+          // Token is invalid, remove it
           localStorage.removeItem('token')
+          localStorage.removeItem('refreshToken')
           setToken(null)
-        })
+          setUser(null)
+        }
+      }
+      setIsLoading(false)
     }
-  }, [token])
+    
+    checkAuth()
+  }, [])
 
   const login = async (username: string, password: string) => {
     const response = await authService.login(username, password)
@@ -76,7 +89,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         setTokens,
-        isAuthenticated: !!token,
+        isAuthenticated: !!token && !!user,
+        isLoading,
       }}
     >
       {children}
