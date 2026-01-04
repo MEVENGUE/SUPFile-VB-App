@@ -3,7 +3,7 @@ OAuth2 authentication endpoints
 Supports Google, GitHub, and Microsoft OAuth2
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 import logging
@@ -434,12 +434,33 @@ async def oauth_callback(
         refresh_token_jwt = create_refresh_token(data={"sub": str(user.id), "username": user.username})
 
         # Redirect to frontend with tokens using URL fragment (#) instead of query params
-        # This avoids ERR_INVALID_REDIRECT errors with long URLs
-        # The fragment is not sent to the server but is available in the browser
+        # Use JavaScript redirect to ensure fragment is preserved (avoids ERR_INVALID_REDIRECT)
         redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback#access_token={quote(access_token_jwt, safe='')}&refresh_token={quote(refresh_token_jwt, safe='')}"
         logger.info(f"OAuth success - redirecting to frontend (URL length: {len(redirect_url)})")
         logger.info(f"OAuth success - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
-        return RedirectResponse(url=redirect_url, status_code=302)
+        
+        # Use HTML response with JavaScript redirect to preserve URL fragment
+        # This avoids ERR_INVALID_REDIRECT errors that can occur with HTTP redirects and fragments
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Redirection...</title>
+        </head>
+        <body>
+            <p>Connexion réussie! Redirection en cours...</p>
+            <script>
+                window.location.href = {repr(redirect_url)};
+            </script>
+            <noscript>
+                <meta http-equiv="refresh" content="0; url={redirect_url}">
+                <p>Si la redirection ne fonctionne pas, <a href="{redirect_url}">cliquez ici</a>.</p>
+            </noscript>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content, status_code=200)
 
     except httpx.HTTPStatusError as e:
         error_text = e.response.text if hasattr(e, 'response') else str(e)
