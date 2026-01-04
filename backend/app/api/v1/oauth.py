@@ -89,13 +89,15 @@ async def oauth_authorize(provider: str, request: Request):
     provider_config = OAUTH_PROVIDERS[provider]
     # Use OAUTH_CALLBACK_BASE_URL if set, otherwise derive from OAUTH_REDIRECT_BASE_URL
     if settings.OAUTH_CALLBACK_BASE_URL:
-        callback_base = settings.OAUTH_CALLBACK_BASE_URL
+        callback_base = settings.OAUTH_CALLBACK_BASE_URL.rstrip('/')
     else:
         # Fallback: try to derive backend URL from frontend URL
         # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
-        callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://')
+        callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://').rstrip('/')
     redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
-    logger.info(f"OAuth authorize - redirect_uri: {redirect_uri}")
+    logger.info(f"OAuth authorize - provider: {provider}, redirect_uri: {redirect_uri}")
+    logger.info(f"OAuth authorize - OAUTH_CALLBACK_BASE_URL: {settings.OAUTH_CALLBACK_BASE_URL}")
+    logger.info(f"OAuth authorize - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
 
     # Build authorization URL
     params = {
@@ -164,15 +166,16 @@ async def oauth_callback(
         # Use OAUTH_CALLBACK_BASE_URL if set, otherwise derive from OAUTH_REDIRECT_BASE_URL
         # IMPORTANT: This must match EXACTLY the redirect_uri used in oauth_authorize
         if settings.OAUTH_CALLBACK_BASE_URL:
-            callback_base = settings.OAUTH_CALLBACK_BASE_URL
+            callback_base = settings.OAUTH_CALLBACK_BASE_URL.rstrip('/')
         else:
             # Fallback: try to derive backend URL from frontend URL
             # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
-            callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://')
+            callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://').rstrip('/')
         redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
-        logger.info(f"OAuth callback - redirect_uri: {redirect_uri}")
+        logger.info(f"OAuth callback - provider: {provider}, redirect_uri: {redirect_uri}")
         logger.info(f"OAuth callback - OAUTH_CALLBACK_BASE_URL: {settings.OAUTH_CALLBACK_BASE_URL}")
         logger.info(f"OAuth callback - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
+        logger.info(f"OAuth callback - code length: {len(code) if code else 0}")
 
         # Exchange code for token
         token_data = {
@@ -193,16 +196,75 @@ async def oauth_callback(
             token_response = await client.post(
                 provider_config['token_url'],
                 data=token_data,
-                headers=headers
+                headers=headers,
+                timeout=30.0
             )
-            token_response.raise_for_status()
-            token_info = token_response.json()
+            
+            # Check for errors in response
+            # GitHub may return errors even with status 200, so check the response body first
+            try:
+                token_info = token_response.json()
+            except Exception:
+                # If response is not JSON, treat as error
+                error_text = token_response.text
+                logger.error(f"OAuth2 token exchange failed - Invalid JSON response: {error_text}")
+                return RedirectResponse(
+                    url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_http_error&message=Réponse invalide du serveur OAuth."
+                )
+            
+            # Check for errors in JSON response (GitHub may return errors with status 200)
+            if 'error' in token_info:
+                error_code = token_info.get('error', 'unknown_error')
+                error_description = token_info.get('error_description', token_info.get('error_description', 'Erreur OAuth inconnue'))
+                logger.error(f"OAuth2 error in response from {provider}: {error_code} - {error_description}")
+                
+                if error_code == 'invalid_grant' or error_code == 'bad_verification_code':
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_code_expired&message=Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer."
+                    )
+                elif error_code == 'invalid_client':
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_config_error&message=Configuration OAuth incorrecte. Contactez l'administrateur."
+                    )
+                else:
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_error&message={error_description}"
+                    )
+            
+            # Check HTTP status code
+            if token_response.status_code != 200:
+                error_text = token_response.text
+                logger.error(f"OAuth2 token exchange failed - Status: {token_response.status_code}, Response: {error_text}")
+                
+                # Try to parse error response (token_info already parsed above)
+                error_code = token_info.get('error', 'unknown_error') if 'error' in token_info else 'http_error'
+                error_description = token_info.get('error_description', error_text) if 'error_description' in token_info else error_text
+                
+                # Handle specific OAuth errors
+                if error_code == 'invalid_grant' or error_code == 'bad_verification_code':
+                    logger.error(f"OAuth2 invalid_grant error from {provider} - Code may have expired or already been used")
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_code_expired&message=Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer."
+                    )
+                elif error_code == 'invalid_client':
+                    logger.error(f"OAuth2 invalid_client error from {provider} - Client credentials may be incorrect")
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_config_error&message=Configuration OAuth incorrecte. Contactez l'administrateur."
+                    )
+                else:
+                    logger.error(f"OAuth2 error from {provider}: {error_code} - {error_description}")
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_error&message={error_description}"
+                    )
 
         access_token = token_info.get('access_token')
         if not access_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to obtain access token"
+            # Check if there's an error in the response
+            error = token_info.get('error')
+            error_description = token_info.get('error_description', 'Failed to obtain access token')
+            logger.error(f"OAuth2 failed to obtain access token from {provider}: {error} - {error_description}")
+            return RedirectResponse(
+                url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_token_error&message={error_description}"
             )
 
         # Get user info from provider
@@ -338,16 +400,47 @@ async def oauth_callback(
 
         # Redirect to frontend with tokens
         redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL}/auth/callback?access_token={access_token_jwt}&refresh_token={refresh_token_jwt}"
+        logger.info(f"OAuth success - redirecting to: {redirect_url}")
+        logger.info(f"OAuth success - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
         return RedirectResponse(url=redirect_url)
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"OAuth2 HTTP error from {provider}: {e.response.text}")
+        error_text = e.response.text if hasattr(e, 'response') else str(e)
+        status_code = e.response.status_code if hasattr(e, 'response') else 500
+        logger.error(f"OAuth2 HTTP error from {provider}: Status {status_code}, Response: {error_text}")
+        
+        # Try to parse error response
+        try:
+            if hasattr(e, 'response'):
+                error_data = e.response.json()
+                error_code = error_data.get('error', 'http_error')
+                error_description = error_data.get('error_description', error_text)
+                
+                if error_code == 'invalid_grant':
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_code_expired&message=Le code d'autorisation a expiré. Veuillez réessayer."
+                    )
+                else:
+                    return RedirectResponse(
+                        url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_http_error&message={error_description}"
+                    )
+        except Exception:
+            pass
+        
         return RedirectResponse(
-            url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_http_error"
+            url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_http_error&message=Erreur HTTP lors de la connexion OAuth."
+        )
+    except httpx.TimeoutException as e:
+        logger.error(f"OAuth2 timeout error from {provider}: {str(e)}")
+        return RedirectResponse(
+            url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_timeout&message=Timeout lors de la connexion OAuth. Veuillez réessayer."
         )
     except Exception as e:
         logger.error(f"OAuth2 error from {provider}: {str(e)}", exc_info=True)
+        error_message = "Une erreur inattendue s'est produite lors de la connexion OAuth."
+        if "invalid_grant" in str(e).lower():
+            error_message = "Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer."
         return RedirectResponse(
-            url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_error"
+            url=f"{settings.OAUTH_REDIRECT_BASE_URL}/login?error=oauth_error&message={error_message}"
         )
 
