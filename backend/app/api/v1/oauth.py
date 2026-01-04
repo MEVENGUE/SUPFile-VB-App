@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Cache pour éviter de traiter le même code OAuth plusieurs fois
+# Les codes sont valides seulement quelques minutes, donc on peut les garder en cache
+_processed_oauth_codes = set()
+
 # OAuth2 provider configurations
 OAUTH_PROVIDERS = {
     'google': {
@@ -142,6 +146,23 @@ async def oauth_callback(
 
     logger.info(f"OAuth callback received - provider: {provider}, code: {code is not None}, error: {error}, state: {state}")
     
+    # Check if this code has already been processed (prevent duplicate processing)
+    code_key = None
+    if code:
+        code_key = f"{provider}:{code}"
+        if code_key in _processed_oauth_codes:
+            logger.warning(f"OAuth callback - Code already processed, redirecting to frontend: {code_key[:50]}...")
+            # Code already processed, redirect to frontend with error
+            error_message = quote("Ce code d'autorisation a déjà été utilisé. Veuillez réessayer.", safe='')
+            redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
+            return RedirectResponse(url=redirect_url, status_code=302)
+        # Mark code as being processed (will be removed if invalid_grant error occurs)
+        _processed_oauth_codes.add(code_key)
+        # Clean old codes (keep only last 1000 to prevent memory leak)
+        if len(_processed_oauth_codes) > 1000:
+            _processed_oauth_codes.clear()
+            logger.info("OAuth callback - Cleared processed codes cache")
+    
     if error:
         logger.error(f"OAuth2 error from {provider}: {error}")
         error_param = quote(error, safe='')
@@ -219,6 +240,10 @@ async def oauth_callback(
                 logger.error(f"OAuth2 error in response from {provider}: {error_code} - {error_description}")
                 
                 if error_code == 'invalid_grant' or error_code == 'bad_verification_code':
+                    # Remove code from cache if invalid_grant (code might be expired, allow retry)
+                    if code_key:
+                        _processed_oauth_codes.discard(code_key)
+                        logger.info(f"OAuth callback - Removed invalid code from cache: {code_key[:50]}...")
                     error_message = quote("Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer.", safe='')
                     redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
                     logger.info(f"OAuth redirecting to frontend (invalid_grant): {redirect_url}")
@@ -244,6 +269,10 @@ async def oauth_callback(
                 # Handle specific OAuth errors
                 if error_code == 'invalid_grant' or error_code == 'bad_verification_code':
                     logger.error(f"OAuth2 invalid_grant error from {provider} - Code may have expired or already been used")
+                    # Remove code from cache if invalid_grant (code might be expired, allow retry)
+                    if code_key:
+                        _processed_oauth_codes.discard(code_key)
+                        logger.info(f"OAuth callback - Removed invalid code from cache: {code_key[:50]}...")
                     error_message = quote("Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer.", safe='')
                     redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
                     logger.info(f"OAuth redirecting to frontend (invalid_grant): {redirect_url}")
@@ -419,6 +448,10 @@ async def oauth_callback(
                 error_description = error_data.get('error_description', error_text)
                 
                 if error_code == 'invalid_grant':
+                    # Remove code from cache if invalid_grant
+                    if code_key:
+                        _processed_oauth_codes.discard(code_key)
+                        logger.info(f"OAuth callback - Removed invalid code from cache: {code_key[:50]}...")
                     error_message = quote("Le code d'autorisation a expiré. Veuillez réessayer.", safe='')
                     redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
                     return RedirectResponse(url=redirect_url, status_code=302)
@@ -442,6 +475,10 @@ async def oauth_callback(
         error_message = "Une erreur inattendue s'est produite lors de la connexion OAuth."
         if "invalid_grant" in str(e).lower():
             error_message = "Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer."
+            # Remove code from cache if invalid_grant
+            if code_key:
+                _processed_oauth_codes.discard(code_key)
+                logger.info(f"OAuth callback - Removed invalid code from cache: {code_key[:50]}...")
         error_message_encoded = quote(error_message, safe='')
         redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_error&message={error_message_encoded}"
         return RedirectResponse(url=redirect_url, status_code=302)
