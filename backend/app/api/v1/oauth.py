@@ -2,7 +2,7 @@
 OAuth2 authentication endpoints
 Supports Google, GitHub, and Microsoft OAuth2
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -113,7 +113,8 @@ async def oauth_authorize(provider: str, request: Request):
     }
 
     if provider == 'microsoft':
-        params['response_mode'] = 'query'
+        # Use form_post to avoid ERR_INVALID_REDIRECT with long URLs
+        params['response_mode'] = 'form_post'
 
     auth_url = f"{provider_config['authorize_url']}?{urlencode(params)}"
     
@@ -121,22 +122,40 @@ async def oauth_authorize(provider: str, request: Request):
 
 
 @router.get("/{provider}/callback")
+@router.post("/{provider}/callback")
 async def oauth_callback(
     provider: str,
+    request: Request,
+    db: Session = Depends(get_db),
     code: Optional[str] = None,
     error: Optional[str] = None,
-    state: Optional[str] = None,
-    request: Request = None,
-    db: Session = Depends(get_db)
+    state: Optional[str] = None
 ):
     """
     OAuth2 callback endpoint
     Handles the redirect from OAuth provider after user authorization
+    Supports both GET (query) and POST (form_post) response modes
     """
-    # Log all query parameters for debugging
-    if request:
-        logger.info(f"OAuth callback - Full URL: {request.url}")
-        logger.info(f"OAuth callback - Query params: {dict(request.query_params)}")
+    # For POST requests (form_post mode, used by Microsoft), get data from form
+    if request.method == "POST":
+        try:
+            form_data = await request.form()
+            code = form_data.get("code") or code
+            error = form_data.get("error") or error
+            state = form_data.get("state") or state
+            logger.info(f"OAuth callback - POST request, form data: code={code is not None}, error={error}, state={state}")
+        except Exception as e:
+            logger.error(f"OAuth callback - Error reading form data: {str(e)}")
+    else:
+        # For GET requests, get from query parameters
+        code = request.query_params.get("code") or code
+        error = request.query_params.get("error") or error
+        state = request.query_params.get("state") or state
+    
+    # Log all parameters for debugging
+    logger.info(f"OAuth callback - Method: {request.method}, Full URL: {request.url}")
+    logger.info(f"OAuth callback - Query params: {dict(request.query_params)}")
+    logger.info(f"OAuth callback - Final values: code={code is not None}, error={error}, state={state}")
     
     if provider not in OAUTH_PROVIDERS:
         raise HTTPException(
