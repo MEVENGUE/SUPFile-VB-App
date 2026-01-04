@@ -53,7 +53,7 @@ export const authService = {
   },
 
   async exchangeOAuthToken(tempToken: string): Promise<LoginResponse> {
-    const response = await axios.get(`${API_URL}/auth/oauth/token/${tempToken}`)
+    const response = await axios.get(`${API_URL}/auth/exchange-token/${tempToken}`)
     return response.data
   },
 }
