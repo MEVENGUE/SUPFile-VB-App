@@ -522,9 +522,32 @@ async def oauth_callback(
                 _oauth_token_cache.pop(token, None)
             
             # Redirect to frontend with short temporary token
+            # Use HTML response with JavaScript redirect to avoid GET request after POST
             redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback?token={temp_token}"
             logger.info(f"OAuth success (Microsoft) - redirecting to frontend with temp token (URL length: {len(redirect_url)})")
-            return RedirectResponse(url=redirect_url, status_code=302)
+            
+            # Use HTML response with JavaScript redirect to preserve the token in URL
+            # This prevents the browser from making a GET request to the callback URL
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Redirection...</title>
+            </head>
+            <body>
+                <p>Connexion réussie! Redirection en cours...</p>
+                <script>
+                    window.location.replace({repr(redirect_url)});
+                </script>
+                <noscript>
+                    <meta http-equiv="refresh" content="0; url={redirect_url}">
+                    <p>Si la redirection ne fonctionne pas, <a href="{redirect_url}">cliquez ici</a>.</p>
+                </noscript>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content, status_code=200)
         else:
             # For Google and GitHub: use fragment URL with JavaScript redirect
             # This avoids ERR_INVALID_REDIRECT while keeping the flow simple
