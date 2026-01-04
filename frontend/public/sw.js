@@ -1,5 +1,5 @@
 // Service Worker pour PWA
-const CACHE_NAME = 'supfile-v2'; // Incrémenter la version pour forcer la mise à jour
+const CACHE_NAME = 'supfile-v3'; // Incrémenter la version pour forcer la mise à jour
 const urlsToCache = [
   '/manifest.json'
 ];
@@ -44,6 +44,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // NE JAMAIS cacher les pages de callback OAuth - toujours aller au réseau
+  if (url.pathname.includes('/auth/callback') || url.pathname.includes('/oauth/callback')) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   // Pour les pages HTML, utiliser "network first" pour toujours avoir la dernière version
   if (request.method === 'GET' && request.headers.get('accept')?.includes('text/html')) {
