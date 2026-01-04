@@ -51,6 +51,11 @@ export const authService = {
     })
     return response.data
   },
+
+  async exchangeOAuthToken(tempToken: string): Promise<LoginResponse> {
+    const response = await axios.get(`${API_URL}/auth/oauth/token/${tempToken}`)
+    return response.data
+  },
 }
 
 export function getAuthHeaders() {
