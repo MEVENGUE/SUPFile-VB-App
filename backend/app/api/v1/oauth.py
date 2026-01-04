@@ -3,11 +3,13 @@ OAuth2 authentication endpoints
 Supports Google, GitHub, and Microsoft OAuth2
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, Dict
 import logging
 import httpx
+import uuid
+import time
 from urllib.parse import urlencode, quote
 
 from app.core.database import get_db
@@ -23,6 +25,12 @@ router = APIRouter()
 # Cache pour éviter de traiter le même code OAuth plusieurs fois
 # Les codes sont valides seulement quelques minutes, donc on peut les garder en cache
 _processed_oauth_codes = set()
+
+# Cache temporaire pour stocker les tokens JWT avant redirection
+# Structure: {temp_token: {"access_token": "...", "refresh_token": "...", "expires_at": timestamp}}
+# Les tokens expirent après 5 minutes
+_oauth_token_cache: Dict[str, Dict] = {}
+TOKEN_CACHE_EXPIRY = 300  # 5 minutes en secondes
 
 # OAuth2 provider configurations
 OAUTH_PROVIDERS = {
@@ -119,6 +127,43 @@ async def oauth_authorize(provider: str, request: Request):
     auth_url = f"{provider_config['authorize_url']}?{urlencode(params)}"
     
     return RedirectResponse(url=auth_url)
+
+
+@router.get("/oauth/token/{temp_token}")
+async def exchange_oauth_token(
+    temp_token: str
+):
+    """
+    Exchange temporary OAuth token for JWT tokens
+    This endpoint is called by the frontend after OAuth redirect
+    """
+    # Check if token exists in cache
+    if temp_token not in _oauth_token_cache:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Token not found or expired"
+        )
+    
+    token_data = _oauth_token_cache[temp_token]
+    
+    # Check if token has expired
+    if time.time() > token_data["expires_at"]:
+        _oauth_token_cache.pop(temp_token, None)
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Token expired"
+        )
+    
+    # Remove token from cache (one-time use)
+    access_token = token_data["access_token"]
+    refresh_token = token_data["refresh_token"]
+    _oauth_token_cache.pop(temp_token, None)
+    
+    return JSONResponse(content={
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    })
 
 
 @router.get("/{provider}/callback")
@@ -452,34 +497,29 @@ async def oauth_callback(
         access_token_jwt = create_access_token(data={"sub": str(user.id), "username": user.username})
         refresh_token_jwt = create_refresh_token(data={"sub": str(user.id), "username": user.username})
 
-        # Redirect to frontend with tokens using URL fragment (#) instead of query params
-        # Use JavaScript redirect to ensure fragment is preserved (avoids ERR_INVALID_REDIRECT)
-        redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback#access_token={quote(access_token_jwt, safe='')}&refresh_token={quote(refresh_token_jwt, safe='')}"
-        logger.info(f"OAuth success - redirecting to frontend (URL length: {len(redirect_url)})")
+        # Store tokens in temporary cache with short-lived token to avoid long URLs
+        # This solves ERR_INVALID_REDIRECT issues with Microsoft OAuth
+        temp_token = str(uuid.uuid4())
+        expires_at = time.time() + TOKEN_CACHE_EXPIRY
+        _oauth_token_cache[temp_token] = {
+            "access_token": access_token_jwt,
+            "refresh_token": refresh_token_jwt,
+            "expires_at": expires_at
+        }
+        
+        # Clean old tokens from cache
+        current_time = time.time()
+        expired_tokens = [token for token, data in _oauth_token_cache.items() if data["expires_at"] < current_time]
+        for token in expired_tokens:
+            _oauth_token_cache.pop(token, None)
+        
+        # Redirect to frontend with short temporary token
+        redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback?token={temp_token}"
+        logger.info(f"OAuth success - redirecting to frontend with temp token (URL length: {len(redirect_url)})")
         logger.info(f"OAuth success - OAUTH_REDIRECT_BASE_URL: {settings.OAUTH_REDIRECT_BASE_URL}")
         
-        # Use HTML response with JavaScript redirect to preserve URL fragment
-        # This avoids ERR_INVALID_REDIRECT errors that can occur with HTTP redirects and fragments
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Redirection...</title>
-        </head>
-        <body>
-            <p>Connexion réussie! Redirection en cours...</p>
-            <script>
-                window.location.href = {repr(redirect_url)};
-            </script>
-            <noscript>
-                <meta http-equiv="refresh" content="0; url={redirect_url}">
-                <p>Si la redirection ne fonctionne pas, <a href="{redirect_url}">cliquez ici</a>.</p>
-            </noscript>
-        </body>
-        </html>
-        """
-        return HTMLResponse(content=html_content, status_code=200)
+        # Use simple HTTP redirect (no long URLs, so no ERR_INVALID_REDIRECT)
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     except httpx.HTTPStatusError as e:
         error_text = e.response.text if hasattr(e, 'response') else str(e)
