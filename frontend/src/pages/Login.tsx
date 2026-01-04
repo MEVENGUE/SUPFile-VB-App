@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { toast } from 'react-toastify'
 import './Auth.css'
@@ -10,6 +10,29 @@ const Login = () => {
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // Handle OAuth errors from URL parameters
+  useEffect(() => {
+    const error = searchParams.get('error')
+    const message = searchParams.get('message')
+    
+    if (error) {
+      const errorMessages: { [key: string]: string } = {
+        'oauth_error': message || 'Erreur lors de la connexion OAuth',
+        'oauth_code_expired': message || 'Le code d\'autorisation a expiré. Veuillez réessayer.',
+        'oauth_config_error': message || 'Configuration OAuth incorrecte. Contactez l\'administrateur.',
+        'oauth_http_error': message || 'Erreur HTTP lors de la connexion OAuth',
+        'oauth_token_error': message || 'Erreur lors de l\'obtention du token OAuth',
+        'oauth_timeout': message || 'Timeout lors de la connexion OAuth. Veuillez réessayer.'
+      }
+      
+      toast.error(errorMessages[error] || 'Erreur lors de la connexion OAuth')
+      
+      // Clean URL parameters
+      navigate('/login', { replace: true })
+    }
+  }, [searchParams, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
