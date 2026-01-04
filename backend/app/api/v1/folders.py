@@ -196,22 +196,45 @@ def list_folders(
     total = query.count()
     folders = query.offset(skip).limit(limit).all()
     
-    # Get counts for each folder
-    folder_responses = []
-    for folder in folders:
-        children_count = db.query(Folder).filter(
+    # Optimize: Get all counts in batch to avoid N+1 queries
+    if folders:
+        folder_ids = [folder.id for folder in folders]
+        
+        # Get all children counts in one query
+        from sqlalchemy import func
+        children_counts = db.query(
+            Folder.parent_id,
+            func.count(Folder.id).label('count')
+        ).filter(
             and_(
-                Folder.parent_id == folder.id,
+                Folder.parent_id.in_(folder_ids),
                 Folder.deleted_at.is_(None)
             )
-        ).count()
+        ).group_by(Folder.parent_id).all()
         
-        files_count = db.query(File).filter(
+        # Get all files counts in one query
+        files_counts = db.query(
+            File.folder_id,
+            func.count(File.id).label('count')
+        ).filter(
             and_(
-                File.folder_id == folder.id,
+                File.folder_id.in_(folder_ids),
                 File.deleted_at.is_(None)
             )
-        ).count()
+        ).group_by(File.folder_id).all()
+        
+        # Create lookup dictionaries
+        children_count_map = {parent_id: count for parent_id, count in children_counts}
+        files_count_map = {folder_id: count for folder_id, count in files_counts}
+    else:
+        children_count_map = {}
+        files_count_map = {}
+    
+    # Build responses with pre-calculated counts
+    folder_responses = []
+    for folder in folders:
+        children_count = children_count_map.get(folder.id, 0)
+        files_count = files_count_map.get(folder.id, 0)
         
         folder_responses.append(FolderResponse(
             id=folder.id,
