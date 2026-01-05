@@ -420,7 +420,7 @@ const SharePage: React.FC = () => {
           onClose={() => setPreviewFile(null)}
           shareToken={token}
           sharePassword={password || undefined}
-          isFromSharedFolder={!!shareData?.folder}
+          isFromSharedFolder={!!shareData?.folder && !!folderContent}
         />
       )}
     </div>
