@@ -294,11 +294,14 @@ const SharePage: React.FC = () => {
               </div>
 
               <div className="share-actions">
-                <button onClick={() => setPreviewFile({
-                  id: shareData!.file!.id,
-                  filename: shareData!.file!.original_filename,
-                  contentType: shareData!.file!.content_type,
-                })} className="btn-primary">
+                <button onClick={() => {
+                  console.log('Preview button clicked, token:', token)
+                  setPreviewFile({
+                    id: shareData!.file!.id,
+                    filename: shareData!.file!.original_filename,
+                    contentType: shareData!.file!.content_type,
+                  })
+                }} className="btn-primary">
                   👁️ Prévisualiser
                 </button>
                 <button onClick={handleDownload} className="btn-secondary">
@@ -412,7 +415,7 @@ const SharePage: React.FC = () => {
         </div>
       </div>
 
-      {previewFile && (
+      {previewFile && token && (
         <FileViewer
           fileId={previewFile.id}
           filename={previewFile.filename}
