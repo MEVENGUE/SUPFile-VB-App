@@ -208,9 +208,12 @@ async def access_share_link(
     Access a shared file or folder using a share token
     No authentication required - this is a public endpoint
     """
+    logger.info(f"Accessing share link with token: {token[:8]}...")
     share_link = db.query(ShareLink).filter(
         ShareLink.token == token
     ).first()
+    
+    logger.info(f"Share link found: {share_link is not None}")
 
     if not share_link:
         raise HTTPException(

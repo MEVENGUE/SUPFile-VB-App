@@ -1,6 +1,23 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+// Get API URL from environment or use default
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL
+  if (envUrl) {
+    return envUrl
+  }
+  // In production, try to infer from current origin
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // Try to use the backend URL from Railway or other hosting
+    // This should be set via VITE_API_URL in Vercel environment variables
+    console.warn('VITE_API_URL not set, using fallback. Please configure VITE_API_URL in Vercel.')
+    return 'https://supfile-vercel-app-production.up.railway.app/api/v1'
+  }
+  return 'http://localhost:8000/api/v1'
+}
+
+const API_URL = getApiUrl()
+console.log('API URL configured:', API_URL)
 
 export interface ShareLink {
   id: number
@@ -90,15 +107,24 @@ export const shareService = {
    */
   async getShareLink(token: string, password?: string): Promise<ShareAccessResponse> {
     try {
-      const response = await axios.get(`${API_URL}/share/${token}`, {
+      const url = `${API_URL}/share/${token}`
+      console.log('Fetching share link from:', url)
+      const response = await axios.get(url, {
         params: password ? { password } : {},
         // Explicitly don't send auth headers for public share links
         headers: {},
       })
+      console.log('Share link response:', response.status, response.data)
       return response.data
     } catch (error: any) {
       // Log the error for debugging
       console.error('Error fetching share link:', error)
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url
+      })
       throw error
     }
   },

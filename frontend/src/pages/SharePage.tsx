@@ -26,7 +26,9 @@ const SharePage: React.FC = () => {
       setLoading(true)
       setError(null)
       
+      console.log('Loading share link with token:', token)
       const data = await shareService.getShareLink(token!, providedPassword || password)
+      console.log('Share link data received:', data)
       setShareData(data)
       setPasswordRequired(false)
 
