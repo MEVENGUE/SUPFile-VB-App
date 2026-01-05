@@ -417,6 +417,7 @@ const SharePage: React.FC = () => {
 
       {previewFile && token && (
         <FileViewer
+          key={`${token}-${previewFile.id}`}
           fileId={previewFile.id}
           filename={previewFile.filename}
           contentType={previewFile.contentType}
