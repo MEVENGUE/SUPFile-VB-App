@@ -14,10 +14,35 @@ const SharePage: React.FC = () => {
   const [shareData, setShareData] = useState<ShareAccessResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [previewFile, setPreviewFile] = useState<{ id: number; filename: string; contentType?: string } | null>(null)
+  const [folderContent, setFolderContent] = useState<{
+    folder: { id: number; name: string; created_at: string | null }
+    files: Array<{
+      id: number
+      filename: string
+      original_filename: string
+      file_size: number
+      content_type: string
+      created_at: string | null
+    }>
+    subfolders: Array<{
+      id: number
+      name: string
+      created_at: string | null
+    }>
+    files_total: number
+    subfolders_total: number
+  } | null>(null)
+  const [loadingFolderContent, setLoadingFolderContent] = useState(false)
 
   useEffect(() => {
+    console.log('SharePage mounted, token from URL:', token)
     if (token) {
+      console.log('Token found, loading share link...')
       loadShareLink()
+    } else {
+      console.error('No token found in URL params')
+      setError('Token de partage manquant dans l\'URL')
+      setLoading(false)
     }
   }, [token])
 
@@ -39,6 +64,11 @@ const SharePage: React.FC = () => {
           filename: data.file.original_filename,
           contentType: data.file.content_type,
         })
+      }
+
+      // If it's a folder, load its content
+      if (data.folder && token) {
+        loadFolderContent(token, providedPassword || password)
       }
     } catch (err: any) {
       console.error('Error loading share link:', err)
@@ -66,14 +96,70 @@ const SharePage: React.FC = () => {
     loadShareLink(password)
   }
 
+  const loadFolderContent = async (shareToken: string, sharePassword?: string) => {
+    try {
+      setLoadingFolderContent(true)
+      const content = await shareService.getSharedFolderContent(shareToken, sharePassword)
+      setFolderContent(content)
+    } catch (err: any) {
+      console.error('Error loading folder content:', err)
+      if (err.response?.status === 401) {
+        setPasswordRequired(true)
+        setError('Mot de passe requis pour accéder à ce dossier')
+      } else {
+        setError(err.response?.data?.detail || 'Erreur lors du chargement du contenu du dossier')
+      }
+    } finally {
+      setLoadingFolderContent(false)
+    }
+  }
+
   const handleDownload = async () => {
-    if (!shareData?.file || !token) return
+    if (!token) return
 
     try {
-      await shareService.downloadSharedFile(
-        token, 
-        password || undefined,
-        shareData.file.original_filename
+      if (shareData?.file) {
+        // Download single file
+        await shareService.downloadSharedFile(
+          token, 
+          password || undefined,
+          shareData.file.original_filename
+        )
+        toast.success('Téléchargement démarré')
+      } else if (shareData?.folder) {
+        // Download folder as ZIP (downloadSharedFile handles both files and folders)
+        await shareService.downloadSharedFile(
+          token,
+          password || undefined,
+          `${shareData.folder.name}.zip`
+        )
+        toast.success('Téléchargement du dossier en cours...')
+      }
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        setPasswordRequired(true)
+        setError('Mot de passe requis pour télécharger')
+      } else {
+        toast.error(error.response?.data?.detail || 'Erreur lors du téléchargement')
+      }
+    }
+  }
+
+  const handleDownloadFileFromFolder = async (file: {
+    id: number
+    filename: string
+    original_filename: string
+    file_size: number
+    content_type: string
+    created_at: string | null
+  }) => {
+    if (!token) return
+
+    try {
+      await shareService.downloadFileFromSharedFolder(
+        token,
+        file.id,
+        password || undefined
       )
       toast.success('Téléchargement démarré')
     } catch (error: any) {
@@ -84,6 +170,23 @@ const SharePage: React.FC = () => {
         toast.error(error.response?.data?.detail || 'Erreur lors du téléchargement')
       }
     }
+  }
+
+  const handlePreviewFileFromFolder = (file: {
+    id: number
+    filename: string
+    original_filename: string
+    file_size: number
+    content_type: string
+    created_at: string | null
+  }) => {
+    // For files in shared folders, we need to use the folder share token
+    // The FileViewer will need to handle this case
+    setPreviewFile({
+      id: file.id,
+      filename: file.original_filename,
+      contentType: file.content_type,
+    })
   }
 
   if (loading) {
@@ -107,9 +210,13 @@ const SharePage: React.FC = () => {
             <span className="error-icon">⚠️</span>
             <h2>Lien de partage invalide</h2>
             <p>{error}</p>
-            <button onClick={() => navigate('/login')} className="btn-primary">
-              Se connecter
-            </button>
+                <button onClick={() => {
+                  // Store the share URL in sessionStorage for redirect after login
+                  sessionStorage.setItem('redirectAfterLogin', `/share/${token}`)
+                  navigate('/login')
+                }} className="btn-primary">
+                  Se connecter
+                </button>
           </div>
         </div>
       </div>
@@ -216,15 +323,81 @@ const SharePage: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <div className="share-info">
-                <div className="info-icon">ℹ️</div>
-                <h3>Accès au dossier partagé</h3>
-                <p>Pour accéder au contenu de ce dossier partagé, vous devez vous connecter à votre compte SUPFile.</p>
-                <p className="info-hint">Une fois connecté, vous pourrez voir et télécharger tous les fichiers contenus dans ce dossier.</p>
-                <button onClick={() => navigate('/login')} className="btn-primary">
-                  Se connecter pour accéder
+
+              <div className="share-actions">
+                <button onClick={handleDownload} className="btn-primary">
+                  📦 Télécharger le dossier (ZIP)
                 </button>
               </div>
+
+              {loadingFolderContent ? (
+                <div className="share-loading">
+                  <div className="spinner"></div>
+                  <p>Chargement du contenu du dossier...</p>
+                </div>
+              ) : folderContent ? (
+                <div className="folder-content">
+                  {folderContent.files_total > 0 && (
+                    <div className="folder-section">
+                      <h3>Fichiers ({folderContent.files_total})</h3>
+                      <div className="file-list">
+                        {folderContent.files.map((file) => (
+                          <div key={file.id} className="file-item">
+                            <div className="file-icon">📄</div>
+                            <div className="file-info">
+                              <span className="file-name">{file.original_filename}</span>
+                              <span className="file-size">{formatFileSize(file.file_size)}</span>
+                            </div>
+                            <div className="file-actions">
+                              <button
+                                onClick={() => handlePreviewFileFromFolder(file)}
+                                className="btn-icon"
+                                title="Prévisualiser"
+                              >
+                                👁️
+                              </button>
+                              <button
+                                onClick={() => handleDownloadFileFromFolder(file)}
+                                className="btn-icon"
+                                title="Télécharger"
+                              >
+                                ⬇️
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {folderContent.subfolders_total > 0 && (
+                    <div className="folder-section">
+                      <h3>Dossiers ({folderContent.subfolders_total})</h3>
+                      <div className="folder-list">
+                        {folderContent.subfolders.map((subfolder) => (
+                          <div key={subfolder.id} className="folder-item">
+                            <div className="folder-icon">📁</div>
+                            <div className="folder-info">
+                              <span className="folder-name">{subfolder.name}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {folderContent.files_total === 0 && folderContent.subfolders_total === 0 && (
+                    <div className="empty-folder">
+                      <p>Ce dossier est vide</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="share-info">
+                  <div className="info-icon">ℹ️</div>
+                  <p>Chargement du contenu du dossier...</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -247,6 +420,7 @@ const SharePage: React.FC = () => {
           onClose={() => setPreviewFile(null)}
           shareToken={token}
           sharePassword={password || undefined}
+          isFromSharedFolder={!!shareData?.folder}
         />
       )}
     </div>

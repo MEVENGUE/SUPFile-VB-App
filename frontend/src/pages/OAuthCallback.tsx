@@ -37,7 +37,14 @@ const OAuthCallback = () => {
             setTokens(response.access_token, response.refresh_token)
             
             toast.success('Connexion réussie!')
-            navigate('/dashboard')
+            // Check if there's a redirect URL stored (e.g., from a shared folder)
+            const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
+            if (redirectUrl) {
+              sessionStorage.removeItem('redirectAfterLogin')
+              navigate(redirectUrl)
+            } else {
+              navigate('/dashboard')
+            }
             return
           } catch (error: any) {
             console.error('Error exchanging OAuth token:', error)
@@ -63,7 +70,14 @@ const OAuthCallback = () => {
           setTokens(accessToken, refreshToken)
           
           toast.success('Connexion réussie!')
-          navigate('/dashboard')
+          // Check if there's a redirect URL stored (e.g., from a shared folder)
+          const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
+          if (redirectUrl) {
+            sessionStorage.removeItem('redirectAfterLogin')
+            navigate(redirectUrl)
+          } else {
+            navigate('/dashboard')
+          }
         } else {
           toast.error('Tokens manquants')
           navigate('/login')

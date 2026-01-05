@@ -37,8 +37,15 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/share/:token" element={<SharePage />} />
             <Route path="/auth/callback" element={<OAuthCallback />} />
+            <Route
+              path="/share/:token"
+              element={
+                <Suspense fallback={<LoadingSpinner />}>
+                  <SharePage />
+                </Suspense>
+              }
+            />
             <Route
               path="/dashboard"
               element={
@@ -107,14 +114,6 @@ function App() {
                     <SharedFilesPage />
                   </Suspense>
                 </PrivateRoute>
-              }
-            />
-            <Route
-              path="/share/:token"
-              element={
-                <Suspense fallback={<LoadingSpinner />}>
-                  <SharePage />
-                </Suspense>
               }
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />

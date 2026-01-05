@@ -131,11 +131,16 @@ export const shareService = {
 
   /**
    * Get preview URL for a shared file
+   * If fileId is provided, it's for a file in a shared folder
    */
-  async getSharedFilePreview(token: string, password?: string): Promise<{ preview_url: string; content_type: string; filename: string }> {
+  async getSharedFilePreview(token: string, password?: string, fileId?: number): Promise<{ preview_url: string; content_type: string; filename: string }> {
     try {
+      const params: any = {}
+      if (password) params.password = password
+      if (fileId) params.file_id = fileId
+      
       const response = await axios.get(`${API_URL}/share/${token}/preview`, {
-        params: password ? { password } : {},
+        params,
         // Explicitly don't send auth headers for public share links
         headers: {},
       })
@@ -147,7 +152,84 @@ export const shareService = {
   },
 
   /**
-   * Download a shared file
+   * Get folder content for a shared folder
+   */
+  async getSharedFolderContent(token: string, password?: string, skip = 0, limit = 100): Promise<{
+    folder: { id: number; name: string; created_at: string | null }
+    files: Array<{
+      id: number
+      filename: string
+      original_filename: string
+      file_size: number
+      content_type: string
+      created_at: string | null
+    }>
+    subfolders: Array<{
+      id: number
+      name: string
+      created_at: string | null
+    }>
+    files_total: number
+    subfolders_total: number
+  }> {
+    try {
+      const response = await axios.get(`${API_URL}/share/${token}/folder`, {
+        params: {
+          ...(password ? { password } : {}),
+          skip,
+          limit,
+        },
+        // Explicitly don't send auth headers for public share links
+        headers: {},
+      })
+      return response.data
+    } catch (error: any) {
+      console.error('Error fetching shared folder content:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Download a file from a shared folder
+   */
+  async downloadFileFromSharedFolder(token: string, fileId: number, password?: string): Promise<void> {
+    try {
+      const response = await axios.get(`${API_URL}/share/${token}/files/${fileId}/download`, {
+        params: password ? { password } : {},
+        responseType: 'blob',
+        // Explicitly don't send auth headers for public share links
+        headers: {},
+      })
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers['content-disposition']
+      let downloadFilename = 'file'
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (filenameMatch && filenameMatch[1]) {
+          downloadFilename = filenameMatch[1].replace(/['"]/g, '')
+        }
+      }
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', downloadFilename)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (error: any) {
+      console.error('Error downloading file from shared folder:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Download a shared file or folder
+   * Files are downloaded directly, folders are downloaded as ZIP
    */
   async downloadSharedFile(token: string, password?: string, filename?: string): Promise<void> {
     try {
@@ -180,6 +262,33 @@ export const shareService = {
       window.URL.revokeObjectURL(url)
     } catch (error: any) {
       console.error('Error downloading shared file:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Download a shared folder as ZIP
+   */
+  async downloadSharedFolder(token: string, folderName: string, password?: string): Promise<void> {
+    try {
+      const response = await axios.get(`${API_URL}/share/${token}/download`, {
+        params: password ? { password } : {},
+        responseType: 'blob',
+        // Explicitly don't send auth headers for public share links
+        headers: {},
+      })
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/zip' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${folderName}.zip`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (error: any) {
+      console.error('Error downloading shared folder:', error)
       throw error
     }
   },

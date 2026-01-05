@@ -41,7 +41,14 @@ const Login = () => {
     try {
       await login(username, password)
       toast.success('Connexion réussie!')
-      navigate('/dashboard')
+      // Check if there's a redirect URL stored (e.g., from a shared folder)
+      const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
+      if (redirectUrl) {
+        sessionStorage.removeItem('redirectAfterLogin')
+        navigate(redirectUrl)
+      } else {
+        navigate('/dashboard')
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Erreur de connexion')
     } finally {

@@ -10,9 +10,10 @@ interface FileViewerProps {
   onClose: () => void
   shareToken?: string
   sharePassword?: string
+  isFromSharedFolder?: boolean // Indicates if this file is from a shared folder
 }
 
-const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, onClose, shareToken, sharePassword }) => {
+const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, onClose, shareToken, sharePassword, isFromSharedFolder }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -44,7 +45,8 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
         
         // Use share service if shareToken is provided, otherwise use regular file service
         if (shareToken) {
-          data = await shareService.getSharedFilePreview(shareToken, sharePassword)
+          // If file is from a shared folder, pass fileId to the preview endpoint
+          data = await shareService.getSharedFilePreview(shareToken, sharePassword, isFromSharedFolder ? fileId : undefined)
         } else {
           data = await fileService.getPreviewUrl(fileId)
         }
@@ -98,6 +100,48 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
 
   const isVideo = (contentType?: string): boolean => {
     return contentType?.startsWith('video/') || false
+  }
+
+  const isOfficeDocument = (contentType?: string, filename?: string): boolean => {
+    if (!contentType && !filename) return false
+    const officeTypes = [
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.oasis.opendocument.text', // .odt
+      'application/vnd.oasis.opendocument.presentation', // .odp
+      'application/vnd.oasis.opendocument.spreadsheet', // .ods
+    ]
+    const officeExtensions = ['.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.odt', '.odp', '.ods']
+    
+    if (contentType && officeTypes.includes(contentType)) return true
+    if (filename) {
+      const lowerFilename = filename.toLowerCase()
+      return officeExtensions.some(ext => lowerFilename.endsWith(ext))
+    }
+    return false
+  }
+
+  const getOfficePreviewUrl = (previewUrl: string, contentType?: string, filename?: string): string => {
+    // Use Microsoft Office Online Viewer for Office documents
+    // This requires the file to be publicly accessible or use a service that can access it
+    const encodedUrl = encodeURIComponent(previewUrl)
+    
+    if (contentType?.includes('word') || filename?.match(/\.(doc|docx)$/i)) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`
+    }
+    if (contentType?.includes('powerpoint') || filename?.match(/\.(ppt|pptx)$/i)) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`
+    }
+    if (contentType?.includes('excel') || filename?.match(/\.(xls|xlsx)$/i)) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`
+    }
+    
+    // Fallback: return original URL
+    return previewUrl
   }
 
   const handleImageZoom = (delta: number) => {
@@ -358,11 +402,40 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
             </div>
           )}
 
+          {isOfficeDocument(contentType, filename) && previewUrl && (
+            <div className="office-viewer">
+              <div className="office-viewer-info">
+                <p>📄 Document Office détecté</p>
+                <p className="office-hint">Prévisualisation via Office Online</p>
+              </div>
+              <iframe
+                src={getOfficePreviewUrl(previewUrl, contentType, filename)}
+                title={filename}
+                className="preview-iframe office-iframe"
+                frameBorder="0"
+                allow="fullscreen"
+              />
+              <div className="office-fallback">
+                <p>Si la prévisualisation ne fonctionne pas, vous pouvez :</p>
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="download-link"
+                  download={filename}
+                >
+                  📥 Télécharger le fichier
+                </a>
+              </div>
+            </div>
+          )}
+
           {!isImage(contentType) &&
             !isPDF(contentType) &&
             !isTextFile(contentType || '') &&
             !isAudio(contentType) &&
-            !isVideo(contentType) && (
+            !isVideo(contentType) &&
+            !isOfficeDocument(contentType, filename) && (
               <div className="unsupported-viewer">
                 <span className="unsupported-icon">📄</span>
                 <p>Prévisualisation non disponible pour ce type de fichier</p>
@@ -375,8 +448,9 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
                     target="_blank"
                     rel="noopener noreferrer"
                     className="download-link"
+                    download={filename}
                   >
-                    Télécharger le fichier
+                    📥 Télécharger le fichier
                   </a>
                 )}
               </div>
