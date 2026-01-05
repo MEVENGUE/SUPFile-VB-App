@@ -295,7 +295,18 @@ const SharePage: React.FC = () => {
 
               <div className="share-actions">
                 <button onClick={() => {
-                  console.log('Preview button clicked, token:', token)
+                  console.log('🔍 Preview button clicked:', { 
+                    token, 
+                    tokenType: typeof token,
+                    tokenLength: token?.length,
+                    fileId: shareData!.file!.id,
+                    filename: shareData!.file!.original_filename
+                  })
+                  if (!token) {
+                    console.error('❌ Token is missing when clicking preview!')
+                    toast.error('Erreur: Token de partage manquant')
+                    return
+                  }
                   setPreviewFile({
                     id: shareData!.file!.id,
                     filename: shareData!.file!.original_filename,
@@ -422,7 +433,7 @@ const SharePage: React.FC = () => {
           filename={previewFile.filename}
           contentType={previewFile.contentType}
           onClose={() => setPreviewFile(null)}
-          shareToken={token}
+          shareToken={token || undefined}
           sharePassword={password || undefined}
           isFromSharedFolder={!!shareData?.folder && !!folderContent}
         />

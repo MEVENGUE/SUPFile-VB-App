@@ -53,12 +53,14 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
         })
         
         // Use share service if shareToken is provided and not empty, otherwise use regular file service
-        if (shareToken && shareToken.trim().length > 0) {
-          console.log('Using share service for preview with token:', shareToken.substring(0, 8) + '...')
+        if (shareToken && typeof shareToken === 'string' && shareToken.trim().length > 0) {
+          console.log('✅ Using share service for preview with token:', shareToken.substring(0, 8) + '...')
           // If file is from a shared folder, pass fileId to the preview endpoint
           data = await shareService.getSharedFilePreview(shareToken, sharePassword, isFromSharedFolder ? fileId : undefined)
+          console.log('✅ Share preview data received:', data)
         } else {
-          console.warn('shareToken is missing or empty, using regular file service for preview')
+          console.warn('❌ shareToken is missing or empty:', { shareToken, type: typeof shareToken, length: shareToken?.length })
+          console.warn('❌ Using regular file service for preview - this should NOT happen for shared files!')
           data = await fileService.getPreviewUrl(fileId)
         }
         
