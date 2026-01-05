@@ -89,54 +89,73 @@ export const shareService = {
    * Get share link details by token
    */
   async getShareLink(token: string, password?: string): Promise<ShareAccessResponse> {
-    const response = await axios.get(`${API_URL}/share/${token}`, {
-      params: password ? { password } : {},
-      // No authentication required for public share links
-    })
-    return response.data
+    try {
+      const response = await axios.get(`${API_URL}/share/${token}`, {
+        params: password ? { password } : {},
+        // Explicitly don't send auth headers for public share links
+        headers: {},
+      })
+      return response.data
+    } catch (error: any) {
+      // Log the error for debugging
+      console.error('Error fetching share link:', error)
+      throw error
+    }
   },
 
   /**
    * Get preview URL for a shared file
    */
   async getSharedFilePreview(token: string, password?: string): Promise<{ preview_url: string; content_type: string; filename: string }> {
-    const response = await axios.get(`${API_URL}/share/${token}/preview`, {
-      params: password ? { password } : {},
-      // No authentication required for public share links
-    })
-    return response.data
+    try {
+      const response = await axios.get(`${API_URL}/share/${token}/preview`, {
+        params: password ? { password } : {},
+        // Explicitly don't send auth headers for public share links
+        headers: {},
+      })
+      return response.data
+    } catch (error: any) {
+      console.error('Error fetching shared file preview:', error)
+      throw error
+    }
   },
 
   /**
    * Download a shared file
    */
   async downloadSharedFile(token: string, password?: string, filename?: string): Promise<void> {
-    const response = await axios.get(`${API_URL}/share/${token}/download`, {
-      params: password ? { password } : {},
-      responseType: 'blob',
-      // No authentication required for public share links
-    })
-    
-    // Extract filename from Content-Disposition header if available
-    const contentDisposition = response.headers['content-disposition']
-    let downloadFilename = filename || 'file'
-    
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
-      if (filenameMatch && filenameMatch[1]) {
-        downloadFilename = filenameMatch[1].replace(/['"]/g, '')
+    try {
+      const response = await axios.get(`${API_URL}/share/${token}/download`, {
+        params: password ? { password } : {},
+        responseType: 'blob',
+        // Explicitly don't send auth headers for public share links
+        headers: {},
+      })
+      
+      // Extract filename from Content-Disposition header if available
+      const contentDisposition = response.headers['content-disposition']
+      let downloadFilename = filename || 'file'
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (filenameMatch && filenameMatch[1]) {
+          downloadFilename = filenameMatch[1].replace(/['"]/g, '')
+        }
       }
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', downloadFilename)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (error: any) {
+      console.error('Error downloading shared file:', error)
+      throw error
     }
-    
-    // Create download link
-    const url = window.URL.createObjectURL(new Blob([response.data]))
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', downloadFilename)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.URL.revokeObjectURL(url)
   },
 
   /**

@@ -215,21 +215,21 @@ async def access_share_link(
     if not share_link:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Share link not found"
+            detail="Lien de partage introuvable"
         )
 
     # Check if link is active
     if not share_link.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link has been deactivated"
+            detail="Ce lien de partage a été désactivé"
         )
 
     # Check expiration
     if share_link.expires_at and share_link.expires_at < datetime.utcnow():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link has expired"
+            detail="Ce lien de partage a expiré"
         )
 
     # Check password if required
@@ -237,13 +237,13 @@ async def access_share_link(
         if not password:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Password required to access this share link"
+                detail="Mot de passe requis pour accéder à ce lien"
             )
         
         if not verify_password(password, share_link.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password"
+                detail="Mot de passe incorrect"
             )
 
     # Update access count and last accessed time
@@ -354,21 +354,21 @@ async def preview_shared_file(
     if not share_link:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Share link not found"
+            detail="Lien de partage introuvable"
         )
 
     # Check if link is active
     if not share_link.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link has been deactivated"
+            detail="Ce lien de partage a été désactivé"
         )
 
     # Check expiration
     if share_link.expires_at and share_link.expires_at < datetime.utcnow():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link has expired"
+            detail="Ce lien de partage a expiré"
         )
 
     # Check password if required
@@ -376,20 +376,20 @@ async def preview_shared_file(
         if not password:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Password required to preview this file"
+                detail="Mot de passe requis pour prévisualiser ce fichier"
             )
         
         if not verify_password(password, share_link.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password"
+                detail="Mot de passe incorrect"
             )
 
     # Only files can be previewed
     if not share_link.file_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot preview a folder directly"
+            detail="Impossible de prévisualiser un dossier directement"
         )
 
     # Get file
@@ -403,7 +403,7 @@ async def preview_shared_file(
     if not file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found"
+            detail="Fichier introuvable"
         )
 
     # Generate SAS URL for preview (1 hour expiry)
@@ -450,21 +450,21 @@ async def download_shared_file(
     if not share_link:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Share link not found"
+            detail="Lien de partage introuvable"
         )
 
     # Check if link is active
     if not share_link.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link has been deactivated"
+            detail="Ce lien de partage a été désactivé"
         )
 
     # Check expiration
     if share_link.expires_at and share_link.expires_at < datetime.utcnow():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link has expired"
+            detail="Ce lien de partage a expiré"
         )
 
     # Check password if required
@@ -472,20 +472,20 @@ async def download_shared_file(
         if not password:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Password required to download this file"
+                detail="Mot de passe requis pour télécharger ce fichier"
             )
         
         if not verify_password(password, share_link.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password"
+                detail="Mot de passe incorrect"
             )
 
     # Only files can be downloaded directly
     if not share_link.file_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot download a folder directly. Please access the folder contents."
+            detail="Impossible de télécharger un dossier directement. Veuillez accéder au contenu du dossier."
         )
 
     # Get file
@@ -499,7 +499,7 @@ async def download_shared_file(
     if not file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found"
+            detail="Fichier introuvable"
         )
 
     # Download from Azure Blob Storage

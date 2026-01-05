@@ -39,9 +39,18 @@ const SharePage: React.FC = () => {
         })
       }
     } catch (err: any) {
+      console.error('Error loading share link:', err)
       if (err.response?.status === 401) {
         setPasswordRequired(true)
         setError('Mot de passe requis pour accéder à ce lien')
+      } else if (err.response?.status === 404) {
+        setError('Lien de partage introuvable. Le lien peut avoir expiré ou avoir été supprimé.')
+      } else if (err.response?.status === 403) {
+        setError(err.response?.data?.detail || 'Ce lien de partage a été désactivé ou a expiré.')
+      } else if (err.response?.status === 500) {
+        setError('Erreur serveur. Veuillez réessayer plus tard.')
+      } else if (!err.response) {
+        setError('Erreur de connexion. Vérifiez votre connexion internet.')
       } else {
         setError(err.response?.data?.detail || 'Erreur lors du chargement du lien de partage')
       }
