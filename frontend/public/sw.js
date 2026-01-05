@@ -1,13 +1,12 @@
 // Service Worker pour PWA
-const CACHE_NAME = 'supfile-v3'; // Incrémenter la version pour forcer la mise à jour
+const CACHE_NAME = 'supfile-v4'; // Incrémenter la version pour forcer la mise à jour
 const urlsToCache = [
   '/manifest.json'
 ];
 
 // Installation du Service Worker
 self.addEventListener('install', (event) => {
-  // Forcer l'activation immédiate du nouveau service worker
-  self.skipWaiting();
+  // Ne pas forcer l'activation immédiate - attendre que l'utilisateur accepte la mise à jour
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -15,7 +14,18 @@ self.addEventListener('install', (event) => {
         // Ne cacher que les fichiers statiques, pas les pages HTML
         return cache.addAll(urlsToCache);
       })
+      .then(() => {
+        // Attendre que l'utilisateur accepte la mise à jour
+        return self.skipWaiting();
+      })
   );
+});
+
+// Écouter les messages du client pour activer la mise à jour
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Activation du Service Worker

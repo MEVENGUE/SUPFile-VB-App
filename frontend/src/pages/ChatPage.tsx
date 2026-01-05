@@ -118,21 +118,33 @@ const ChatPage = () => {
           </div>
 
           <div className="chat-input-container">
-            <textarea
-              className="chat-input"
-              placeholder="Tapez votre message..."
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              rows={1}
-            />
-            <button
-              className="chat-send-btn"
-              onClick={sendMessage}
-              disabled={!inputMessage.trim() || loading}
-            >
-              Envoyer
-            </button>
+            <div className="chat-input-wrapper">
+              <textarea
+                className="chat-input"
+                placeholder="Tapez votre message..."
+                value={inputMessage}
+                onChange={(e) => {
+                  setInputMessage(e.target.value)
+                  // Auto-resize textarea
+                  e.target.style.height = 'auto'
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+                }}
+                onKeyPress={handleKeyPress}
+                rows={1}
+              />
+              <button
+                className="chat-send-btn"
+                onClick={sendMessage}
+                disabled={!inputMessage.trim() || loading}
+                aria-label="Envoyer le message"
+              >
+                {loading ? (
+                  <span className="send-spinner"></span>
+                ) : (
+                  <span className="send-icon">➤</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

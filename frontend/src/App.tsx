@@ -9,6 +9,7 @@ import Register from './pages/Register'
 import OAuthCallback from './pages/OAuthCallback'
 import PrivateRoute from './components/PrivateRoute'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
+import UpdateNotification from './components/UpdateNotification'
 import LoadingSpinner from './components/LoadingSpinner'
 import { AuthProvider } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -119,6 +120,12 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>
           <PWAInstallPrompt />
+          <UpdateNotification 
+            onUpdate={() => {
+              // La page sera rechargée automatiquement par le service worker
+              window.location.reload()
+            }}
+          />
         </Router>
         <ToastContainer position="top-right" autoClose={3000} />
           </WebSocketProvider>

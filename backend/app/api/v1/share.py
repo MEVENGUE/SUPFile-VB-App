@@ -335,6 +335,100 @@ async def delete_share_link(
     return None
 
 
+@router.get("/{token}/preview")
+async def preview_shared_file(
+    token: str,
+    password: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a preview URL for a shared file using a share token
+    No authentication required - this is a public endpoint
+    """
+    from app.services.azure_blob import get_azure_blob_service
+
+    share_link = db.query(ShareLink).filter(
+        ShareLink.token == token
+    ).first()
+
+    if not share_link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share link not found"
+        )
+
+    # Check if link is active
+    if not share_link.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This share link has been deactivated"
+        )
+
+    # Check expiration
+    if share_link.expires_at and share_link.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This share link has expired"
+        )
+
+    # Check password if required
+    if share_link.password_hash:
+        if not password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Password required to preview this file"
+            )
+        
+        if not verify_password(password, share_link.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password"
+            )
+
+    # Only files can be previewed
+    if not share_link.file_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot preview a folder directly"
+        )
+
+    # Get file
+    file = db.query(File).filter(
+        and_(
+            File.id == share_link.file_id,
+            File.deleted_at.is_(None)
+        )
+    ).first()
+
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    # Generate SAS URL for preview (1 hour expiry)
+    try:
+        blob_service = get_azure_blob_service()
+        if not blob_service:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Azure Blob Storage is not configured."
+            )
+        preview_url = blob_service.generate_sas_url(file.blob_name, expiry_minutes=60)
+        
+        return {
+            "preview_url": preview_url,
+            "content_type": file.content_type,
+            "filename": file.original_filename
+        }
+    except Exception as e:
+        logger.error(f"Error generating preview URL: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating preview URL: {str(e)}"
+        )
+
+
 @router.get("/{token}/download")
 async def download_shared_file(
     token: str,

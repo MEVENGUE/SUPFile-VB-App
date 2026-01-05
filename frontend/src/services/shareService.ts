@@ -91,7 +91,18 @@ export const shareService = {
   async getShareLink(token: string, password?: string): Promise<ShareAccessResponse> {
     const response = await axios.get(`${API_URL}/share/${token}`, {
       params: password ? { password } : {},
-      headers: getAuthHeaders(),
+      // No authentication required for public share links
+    })
+    return response.data
+  },
+
+  /**
+   * Get preview URL for a shared file
+   */
+  async getSharedFilePreview(token: string, password?: string): Promise<{ preview_url: string; content_type: string; filename: string }> {
+    const response = await axios.get(`${API_URL}/share/${token}/preview`, {
+      params: password ? { password } : {},
+      // No authentication required for public share links
     })
     return response.data
   },
@@ -99,18 +110,29 @@ export const shareService = {
   /**
    * Download a shared file
    */
-  async downloadSharedFile(token: string, password?: string): Promise<void> {
+  async downloadSharedFile(token: string, password?: string, filename?: string): Promise<void> {
     const response = await axios.get(`${API_URL}/share/${token}/download`, {
       params: password ? { password } : {},
-      headers: getAuthHeaders(),
       responseType: 'blob',
+      // No authentication required for public share links
     })
+    
+    // Extract filename from Content-Disposition header if available
+    const contentDisposition = response.headers['content-disposition']
+    let downloadFilename = filename || 'file'
+    
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (filenameMatch && filenameMatch[1]) {
+        downloadFilename = filenameMatch[1].replace(/['"]/g, '')
+      }
+    }
     
     // Create download link
     const url = window.URL.createObjectURL(new Blob([response.data]))
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', 'file')
+    link.setAttribute('download', downloadFilename)
     document.body.appendChild(link)
     link.click()
     link.remove()

@@ -59,7 +59,11 @@ const SharePage: React.FC = () => {
     if (!shareData?.file || !token) return
 
     try {
-      await shareService.downloadSharedFile(token, password || undefined)
+      await shareService.downloadSharedFile(
+        token, 
+        password || undefined,
+        shareData.file.original_filename
+      )
       toast.success('Téléchargement démarré')
     } catch (error: any) {
       if (error.response?.status === 401) {
@@ -202,9 +206,12 @@ const SharePage: React.FC = () => {
                 </div>
               </div>
               <div className="share-info">
-                <p>Pour accéder au contenu de ce dossier, veuillez vous connecter.</p>
+                <div className="info-icon">ℹ️</div>
+                <h3>Accès au dossier partagé</h3>
+                <p>Pour accéder au contenu de ce dossier partagé, vous devez vous connecter à votre compte SUPFile.</p>
+                <p className="info-hint">Une fois connecté, vous pourrez voir et télécharger tous les fichiers contenus dans ce dossier.</p>
                 <button onClick={() => navigate('/login')} className="btn-primary">
-                  Se connecter
+                  Se connecter pour accéder
                 </button>
               </div>
             </div>
@@ -227,6 +234,8 @@ const SharePage: React.FC = () => {
           filename={previewFile.filename}
           contentType={previewFile.contentType}
           onClose={() => setPreviewFile(null)}
+          shareToken={token}
+          sharePassword={password || undefined}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { fileService } from '../services/fileService'
+import { shareService } from '../services/shareService'
 import './FileViewer.css'
 
 interface FileViewerProps {
@@ -7,9 +8,11 @@ interface FileViewerProps {
   filename: string
   contentType?: string
   onClose: () => void
+  shareToken?: string
+  sharePassword?: string
 }
 
-const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, onClose }) => {
+const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, onClose, shareToken, sharePassword }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -19,13 +22,33 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [touchStart, setTouchStart] = useState<{ x: number; y: number; distance: number } | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
   const imageRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    // Détecter si on est sur mobile
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768 || 'ontouchstart' in window)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     const loadPreview = async () => {
       try {
         setLoading(true)
-        const data = await fileService.getPreviewUrl(fileId)
+        let data: { preview_url: string; content_type: string; filename: string }
+        
+        // Use share service if shareToken is provided, otherwise use regular file service
+        if (shareToken) {
+          data = await shareService.getSharedFilePreview(shareToken, sharePassword)
+        } else {
+          data = await fileService.getPreviewUrl(fileId)
+        }
+        
         setPreviewUrl(data.preview_url)
 
         // For text files, fetch and display content directly
@@ -47,7 +70,7 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
     }
 
     loadPreview()
-  }, [fileId, contentType])
+  }, [fileId, contentType, shareToken, sharePassword])
 
   const isTextFile = (contentType: string): boolean => {
     return (
@@ -107,6 +130,48 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
 
   const handleImageDragEnd = () => {
     setIsDragging(false)
+  }
+
+  // Gestion tactile pour mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      )
+      setTouchStart({ x: (touch1.clientX + touch2.clientX) / 2, y: (touch1.clientY + touch2.clientY) / 2, distance })
+    } else if (e.touches.length === 1 && imageZoom > 1) {
+      const touch = e.touches[0]
+      setIsDragging(true)
+      setDragStart({ x: touch.clientX - imagePosition.x, y: touch.clientY - imagePosition.y })
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStart) {
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      )
+      const scale = distance / touchStart.distance
+      const newZoom = Math.max(0.5, Math.min(5, imageZoom * scale))
+      setImageZoom(newZoom)
+    } else if (e.touches.length === 1 && isDragging && imageZoom > 1) {
+      const touch = e.touches[0]
+      setImagePosition({
+        x: touch.clientX - dragStart.x,
+        y: touch.clientY - dragStart.y,
+      })
+    }
+  }
+
+  const handleTouchEnd = () => {
+    setIsDragging(false)
+    setTouchStart(null)
   }
 
   const toggleFullscreen = () => {
@@ -189,43 +254,55 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
 
         <div className="file-viewer-content">
           {isImage(contentType) && previewUrl && (
-            <div className={`image-viewer ${isFullscreen ? 'fullscreen' : ''}`}>
+            <div className={`image-viewer ${isFullscreen ? 'fullscreen' : ''} ${isMobile ? 'mobile' : ''}`}>
               <div className="image-controls">
                 <button
                   onClick={() => handleImageZoom(0.1)}
                   className="zoom-btn"
-                  title="Zoomer (molette ou +)"
+                  title="Zoomer"
+                  aria-label="Zoomer"
                 >
                   ➕
                 </button>
                 <button
                   onClick={() => handleImageZoom(-0.1)}
                   className="zoom-btn"
-                  title="Dézoomer (molette ou -)"
+                  title="Dézoomer"
+                  aria-label="Dézoomer"
                 >
                   ➖
                 </button>
                 <button
                   onClick={handleImageReset}
                   className="zoom-btn"
-                  title="Réinitialiser (0)"
+                  title="Réinitialiser"
+                  aria-label="Réinitialiser"
                 >
                   🔍
                 </button>
                 <button
                   onClick={toggleFullscreen}
                   className="zoom-btn"
-                  title="Plein écran (F11)"
+                  title="Plein écran"
+                  aria-label="Plein écran"
                 >
                   {isFullscreen ? '🗗' : '🗖'}
                 </button>
               </div>
+              {isMobile && (
+                <div className="mobile-hints">
+                  <p>📌 Pincez pour zoomer • Glissez pour déplacer</p>
+                </div>
+              )}
               <div
                 className="image-container"
                 onMouseDown={handleImageDragStart}
                 onMouseMove={handleImageDrag}
                 onMouseUp={handleImageDragEnd}
                 onMouseLeave={handleImageDragEnd}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
                 style={{ cursor: imageZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
               >
                 <img
@@ -241,7 +318,7 @@ const FileViewer: React.FC<FileViewerProps> = ({ fileId, filename, contentType, 
                 />
               </div>
               <div className="image-info">
-                Zoom: {Math.round(imageZoom * 100)}% | Utilisez la molette pour zoomer, glissez pour déplacer
+                Zoom: {Math.round(imageZoom * 100)}% {!isMobile && '| Utilisez la molette pour zoomer, glissez pour déplacer'}
               </div>
             </div>
           )}
