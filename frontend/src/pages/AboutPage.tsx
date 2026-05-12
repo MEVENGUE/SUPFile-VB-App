@@ -29,6 +29,7 @@ const AboutPage = () => {
               <h4>👤 Auteurs</h4>
               <p>MEVENGUE Franck</p>
               <p>Nadia Loukdache</p>
+              <p>Ayman El-Karroussi</p>
               <p className="info-subtitle">Étudiants SUPINFO</p>
             </div>
 
