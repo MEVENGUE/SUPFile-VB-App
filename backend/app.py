@@ -6,7 +6,7 @@ import uvicorn
 import os
 from app.core.config import settings
 
-if name == "main":
+if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
