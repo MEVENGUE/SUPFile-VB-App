@@ -316,7 +316,7 @@ Voir [DOCUMENTATION.md](./DOCUMENTATION.md#installation) pour les instructions d
 
 - **MEVENGUE Franck** - Développeur principal
 - **Nadia Loukdache** - Co-développeuse
-
+- **Ayman El-Karroussi** - Co-développeur
 ---
 
 ## 📄 Licence
