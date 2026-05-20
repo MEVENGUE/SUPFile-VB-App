@@ -64,6 +64,18 @@ def create_refresh_token(data: dict) -> str:
     return encoded_jwt
 
 
+def create_preview_token(file_id: int, user_id: int, minutes: int = 60) -> str:
+    """Jeton court pour prévisualisation fichier (stockage local / sans SAS)."""
+    expire = datetime.utcnow() + timedelta(minutes=minutes)
+    payload = {
+        "sub": str(user_id),
+        "file_id": file_id,
+        "exp": expire,
+        "type": "preview",
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
 def verify_token(token: str, token_type: str = "access") -> Optional[dict]:
     """
     Verify and decode a JWT token

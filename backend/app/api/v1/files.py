@@ -8,13 +8,15 @@ from sqlalchemy import and_, or_, func
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime, timezone
+from pathlib import Path
 from app.core.database import get_db
 from app.core.security import validate_file_extension, validate_file_size
 from app.core.middleware import get_current_user_id
 from app.core.config import settings
 from app.models.file import File
 from app.models.user import User
-from app.services.azure_blob import get_azure_blob_service
+from app.services.storage_service import get_storage_service
+from app.core.security import verify_token
 import io
 import logging
 
@@ -44,6 +46,163 @@ class FileListResponse(BaseModel):
     total: int
 
 
+class ChunkInitResponse(BaseModel):
+    upload_id: str
+    chunk_size: int
+
+
+class ChunkUploadResponse(BaseModel):
+    upload_id: str
+    chunk_index: int
+    received: bool
+    bytes_written: int
+
+
+class ChunkCompleteRequest(BaseModel):
+    upload_id: str
+    total_chunks: int
+    filename: str
+    content_type: Optional[str] = None
+    folder_id: Optional[int] = None
+
+
+def _get_chunk_dir(upload_id: str, user_id: int) -> Path:
+    base = Path(settings.CHUNK_TMP_PATH).resolve()
+    chunk_dir = (base / str(user_id) / upload_id).resolve()
+    if not str(chunk_dir).startswith(str(base)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid upload id")
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    return chunk_dir
+
+
+def _save_file_record(
+    *,
+    file_content: bytes,
+    filename: str,
+    content_type: Optional[str],
+    folder_id: Optional[int],
+    current_user_id: int,
+    db: Session,
+) -> FileResponse:
+    storage = get_storage_service()
+    if not storage:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Stockage non configuré. Vérifier STORAGE_BACKEND et UPLOAD_PATH (ou Azure).",
+        )
+
+    blob_name = storage.generate_blob_name(current_user_id, filename)
+    blob_url = storage.upload_file(
+        file_content=file_content,
+        blob_name=blob_name,
+        content_type=content_type,
+        metadata={
+            "user_id": str(current_user_id),
+            "original_filename": filename,
+        },
+    )
+
+    db_file = File(
+        user_id=current_user_id,
+        folder_id=folder_id,
+        filename=blob_name,
+        original_filename=filename,
+        file_size=len(file_content),
+        content_type=content_type,
+        blob_name=blob_name,
+        blob_url=blob_url,
+        upload_region=settings.UPLOAD_REGION,
+        is_public=False,
+    )
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+
+    return FileResponse(
+        id=db_file.id,
+        filename=db_file.filename,
+        original_filename=db_file.original_filename,
+        file_size=db_file.file_size,
+        content_type=db_file.content_type,
+        created_at=db_file.created_at.isoformat(),
+        upload_region=db_file.upload_region,
+        deleted_at=db_file.deleted_at.isoformat() if db_file.deleted_at else None,
+    )
+
+
+@router.post("/upload/init", response_model=ChunkInitResponse)
+async def init_chunk_upload(current_user_id: int = Depends(get_current_user_id)):
+    if not settings.CHUNK_UPLOAD_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chunk upload disabled")
+    upload_id = f"u{current_user_id}-{datetime.utcnow().timestamp():.0f}"
+    _get_chunk_dir(upload_id, current_user_id)
+    return ChunkInitResponse(upload_id=upload_id, chunk_size=settings.chunk_size_bytes)
+
+
+@router.post("/upload/chunk", response_model=ChunkUploadResponse)
+async def upload_chunk(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(..., ge=0),
+    chunk: UploadFile = FastAPIFile(...),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    if not settings.CHUNK_UPLOAD_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chunk upload disabled")
+
+    data = await chunk.read()
+    if len(data) > settings.chunk_size_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chunk too large")
+
+    chunk_dir = _get_chunk_dir(upload_id, current_user_id)
+    chunk_path = chunk_dir / f"{chunk_index}.part"
+    chunk_path.write_bytes(data)
+    return ChunkUploadResponse(
+        upload_id=upload_id, chunk_index=chunk_index, received=True, bytes_written=len(data)
+    )
+
+
+@router.post("/upload/complete", response_model=FileResponse)
+async def complete_chunk_upload(
+    payload: ChunkCompleteRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    if not settings.CHUNK_UPLOAD_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chunk upload disabled")
+    if not validate_file_extension(payload.filename):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed")
+
+    chunk_dir = _get_chunk_dir(payload.upload_id, current_user_id)
+    parts = []
+    for idx in range(payload.total_chunks):
+        part = chunk_dir / f"{idx}.part"
+        if not part.is_file():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Missing chunk {idx}")
+        parts.append(part.read_bytes())
+
+    file_content = b"".join(parts)
+    if not validate_file_size(len(file_content)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File size exceeds maximum allowed size: {settings.MAX_FILE_SIZE_MB}MB",
+        )
+
+    response = _save_file_record(
+        file_content=file_content,
+        filename=payload.filename,
+        content_type=payload.content_type,
+        folder_id=payload.folder_id,
+        current_user_id=current_user_id,
+        db=db,
+    )
+
+    # Cleanup chunks
+    for file in chunk_dir.glob("*.part"):
+        file.unlink(missing_ok=True)
+    chunk_dir.rmdir()
+    return response
+
+
 @router.post("/upload", response_model=FileResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = FastAPIFile(...),
@@ -52,7 +211,7 @@ async def upload_file(
     db: Session = Depends(get_db)
 ):
     """
-    Upload a file to Azure Blob Storage
+    Upload a file to storage (GlusterFS/local or Azure)
     """
     # Validate file extension
     if not file.filename:
@@ -107,21 +266,20 @@ async def upload_file(
             )
     
     # Generate blob name
-    blob_service = get_azure_blob_service()
-    if not blob_service:
+    storage = get_storage_service()
+    if not storage:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Azure Blob Storage is not configured. Please configure Azure Storage credentials."
+            detail="Stockage non configuré. Vérifier STORAGE_BACKEND et UPLOAD_PATH (ou Azure).",
         )
-    
-    blob_name = blob_service.generate_blob_name(
+
+    blob_name = storage.generate_blob_name(
         current_user_id,
         file.filename
     )
     
-    # Upload to Azure Blob Storage
     try:
-        blob_url = blob_service.upload_file(
+        blob_url = storage.upload_file(
             file_content=file_content,
             blob_name=blob_name,
             content_type=file.content_type,
@@ -133,7 +291,7 @@ async def upload_file(
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        logger.error(f"Error uploading file to Azure Blob Storage: {str(e)}\n{error_details}")
+        logger.error(f"Error uploading file to storage: {str(e)}\n{error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error uploading file to storage: {str(e)}"
@@ -149,7 +307,7 @@ async def upload_file(
         content_type=file.content_type,
         blob_name=blob_name,
         blob_url=blob_url,
-        upload_region=settings.AZURE_PRIMARY_REGION,
+        upload_region=settings.UPLOAD_REGION,
         is_public=False
     )
     
@@ -399,8 +557,7 @@ async def preview_file(
     db: Session = Depends(get_db)
 ):
     """
-    Get a preview URL for a file (SAS URL with 1 hour expiry)
-    Returns a temporary URL that can be used to preview the file directly
+    URL de prévisualisation (SAS Azure ou jeton court pour stockage local/GlusterFS)
     """
     file = db.query(File).filter(
         File.id == file_id,
@@ -414,27 +571,64 @@ async def preview_file(
             detail="File not found"
         )
     
-    # Generate SAS URL for preview (1 hour expiry)
     try:
-        blob_service = get_azure_blob_service()
-        if not blob_service:
+        storage = get_storage_service()
+        if not storage:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Azure Blob Storage is not configured."
+                detail="Stockage non configuré.",
             )
-        preview_url = blob_service.generate_sas_url(file.blob_name, expiry_minutes=60)
-        
+        preview_url = storage.get_preview_url(file.id, current_user_id, file.blob_name)
         return {
             "preview_url": preview_url,
             "content_type": file.content_type,
-            "filename": file.original_filename
+            "filename": file.original_filename,
         }
     except Exception as e:
         logger.error(f"Error generating preview URL: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating preview URL: {str(e)}"
+            detail=f"Error generating preview URL: {str(e)}",
         )
+
+
+@router.get("/{file_id}/preview/content")
+async def preview_file_content(
+    file_id: int,
+    token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Flux de prévisualisation avec jeton court (stockage local / GlusterFS)."""
+    payload = verify_token(token, token_type="preview")
+    if not payload or payload.get("file_id") != file_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide")
+
+    user_id = int(payload.get("sub"))
+    file = db.query(File).filter(
+        File.id == file_id,
+        File.user_id == user_id,
+        File.deleted_at.is_(None),
+    ).first()
+    if not file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    storage = get_storage_service()
+    if not storage:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Stockage indisponible")
+
+    try:
+        content = storage.download_file(file.blob_name)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error loading file: {str(e)}",
+        )
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=file.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{file.original_filename}"'},
+    )
 
 
 @router.get("/{file_id}/download")
@@ -444,7 +638,7 @@ async def download_file(
     db: Session = Depends(get_db)
 ):
     """
-    Download a file from Azure Blob Storage
+    Download a file from storage
     """
     file = db.query(File).filter(
         File.id == file_id,
@@ -457,15 +651,14 @@ async def download_file(
             detail="File not found"
         )
     
-    # Download from Azure Blob Storage
     try:
-        blob_service = get_azure_blob_service()
-        if not blob_service:
+        storage = get_storage_service()
+        if not storage:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Azure Blob Storage is not configured."
+                detail="Stockage non configuré.",
             )
-        file_content = blob_service.download_file(file.blob_name)
+        file_content = storage.download_file(file.blob_name)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -592,7 +785,7 @@ async def delete_file_permanent(
 ):
     """
     Permanently delete a file from trash
-    This will also delete the file from Azure Blob Storage
+    Supprime aussi le fichier du stockage (GlusterFS/local ou Azure)
     """
     file = db.query(File).filter(
         and_(
@@ -608,13 +801,12 @@ async def delete_file_permanent(
             detail="Fichier introuvable dans la corbeille"
         )
     
-    # Delete from Azure Blob Storage
     try:
-        blob_service = get_azure_blob_service()
-        if blob_service:
-            blob_service.delete_file(file.blob_name)
+        storage = get_storage_service()
+        if storage:
+            storage.delete_file(file.blob_name)
     except Exception as e:
-        logger.error(f"Error deleting file from Azure Blob Storage: {str(e)}")
+        logger.error(f"Error deleting file from storage: {str(e)}")
         # Continue with database deletion even if blob deletion fails
     
     # Delete from database

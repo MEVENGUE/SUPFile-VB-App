@@ -1,55 +1,64 @@
 """
-Database configuration and session management
-Supports Azure Database for PostgreSQL
+Connexion base de données — MySQL/Galera via ProxySQL (hybride) ou PostgreSQL (dev).
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine.url import make_url
 from app.core.config import settings
 
-# Create database engine
-# Azure PostgreSQL requires SSL mode
-# Railway PostgreSQL may also require SSL
 database_url = settings.DATABASE_URL
 
-# Add SSL mode for Azure or Railway PostgreSQL
-if database_url:
-    # Check if it's Azure PostgreSQL
+# SSL PostgreSQL cloud (Azure / Railway) — ignoré pour MySQL interne
+if database_url and not settings.is_mysql:
     if "postgres.database.azure.com" in database_url and "sslmode" not in database_url:
-        if "?" in database_url:
-            database_url += "&sslmode=require"
-        else:
-            database_url += "?sslmode=require"
-    # Check if it's Railway PostgreSQL (usually ends with .railway.app or contains railway)
-    elif ("railway" in database_url.lower() or ".railway.app" in database_url) and "sslmode" not in database_url:
-        if "?" in database_url:
-            database_url += "&sslmode=require"
-        else:
-            database_url += "?sslmode=require"
+        sep = "&" if "?" in database_url else "?"
+        database_url += f"{sep}sslmode=require"
+    elif (
+        "railway" in database_url.lower() or ".railway.app" in database_url
+    ) and "sslmode" not in database_url:
+        sep = "&" if "?" in database_url else "?"
+        database_url += f"{sep}sslmode=require"
 
-engine = create_engine(
-    database_url,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=10,
-    max_overflow=20,
-    echo=settings.DEBUG,  # Log SQL queries in debug mode
-)
+engine_kwargs = {
+    "pool_pre_ping": True,
+    "pool_size": 10,
+    "max_overflow": 20,
+    "echo": settings.DEBUG,
+}
 
-# Session factory
+if settings.is_mysql:
+    engine_kwargs["pool_recycle"] = 3600
+
+engine = create_engine(database_url, **engine_kwargs)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for models
 Base = declarative_base()
 
 
 def get_db():
-    """
-    Dependency for FastAPI to get database session
-    Usage: db: Session = Depends(get_db)
-    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
+
+def check_database_connection() -> dict:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        dialect = "mysql" if settings.is_mysql else "postgresql"
+        parsed = make_url(settings.DATABASE_URL)
+        return {
+            "status": "connected",
+            "dialect": dialect,
+            "cluster": "galera" if settings.is_mysql else "postgresql",
+            "proxysql": settings.is_mysql
+            and (parsed.port == 6033 or "proxysql" in (parsed.host or "").lower()),
+            "host": parsed.host,
+            "port": parsed.port,
+            "database": parsed.database,
+        }
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}

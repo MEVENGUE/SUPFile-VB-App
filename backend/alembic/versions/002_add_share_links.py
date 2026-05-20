@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '002_add_share_links'
@@ -34,9 +33,9 @@ def upgrade() -> None:
             sa.Column('user_id', sa.Integer(), nullable=False),
             sa.Column('password_hash', sa.String(), nullable=True),
             sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
-            sa.Column('is_active', sa.Boolean(), nullable=True, server_default='true'),
-            sa.Column('access_count', sa.Integer(), nullable=True, server_default='0'),
-            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=True, server_default=sa.text('1')),
+            sa.Column('access_count', sa.Integer(), nullable=True, server_default=sa.text('0')),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
             sa.Column('last_accessed_at', sa.DateTime(timezone=True), nullable=True),
             sa.ForeignKeyConstraint(['file_id'], ['files.id'], ),
             sa.ForeignKeyConstraint(['folder_id'], ['folders.id'], ),

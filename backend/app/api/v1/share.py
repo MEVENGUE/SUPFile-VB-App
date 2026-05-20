@@ -352,7 +352,7 @@ async def preview_shared_file(
     No authentication required - this is a public endpoint
     If token is for a folder, file_id parameter is required
     """
-    from app.services.azure_blob import get_azure_blob_service
+    from app.services.storage_service import get_storage_service
 
     logger.info(f"Accessing shared file preview with token: {token[:8]}..., file_id: {file_id}")
 
@@ -443,13 +443,13 @@ async def preview_shared_file(
 
     # Generate SAS URL for preview (1 hour expiry)
     try:
-        blob_service = get_azure_blob_service()
+        blob_service = get_storage_service()
         if not blob_service:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Azure Blob Storage is not configured."
+                detail="Stockage non configuré."
             )
-        preview_url = blob_service.generate_sas_url(file.blob_name, expiry_minutes=60)
+        preview_url = blob_service.get_preview_url(file.id, file.user_id, file.blob_name)
         
         return {
             "preview_url": preview_url,
@@ -615,7 +615,7 @@ async def download_shared_file(
     No authentication required - this is a public endpoint
     """
     from fastapi.responses import StreamingResponse
-    from app.services.azure_blob import get_azure_blob_service
+    from app.services.storage_service import get_storage_service
 
     logger.info(f"Downloading shared resource with token: {token[:8]}...")
 
@@ -687,7 +687,7 @@ async def download_shared_file(
                 )
             ).all()
             
-            blob_service = get_azure_blob_service()
+            blob_service = get_storage_service()
             
             for file in files:
                 try:
@@ -768,7 +768,7 @@ async def download_shared_file(
 
     # Download from Azure Blob Storage
     try:
-        blob_service = get_azure_blob_service()
+        blob_service = get_storage_service()
         if not blob_service:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -810,7 +810,7 @@ async def download_file_from_shared_folder(
     No authentication required - this is a public endpoint
     """
     from fastapi.responses import StreamingResponse
-    from app.services.azure_blob import get_azure_blob_service
+    from app.services.storage_service import get_storage_service
     import io
 
     logger.info(f"Downloading file {file_id} from shared folder with token: {token[:8]}...")
@@ -877,7 +877,7 @@ async def download_file_from_shared_folder(
 
     # Download from Azure Blob Storage
     try:
-        blob_service = get_azure_blob_service()
+        blob_service = get_storage_service()
         if not blob_service:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

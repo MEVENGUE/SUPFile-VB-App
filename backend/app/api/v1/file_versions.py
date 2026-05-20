@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.middleware import get_current_user_id
 from app.models.file import File
 from app.models.file_version import FileVersion
-from app.services.azure_blob import get_azure_blob_service
+from app.services.storage_service import get_storage_service
 from fastapi.responses import StreamingResponse
 import logging
 import io
@@ -68,7 +68,7 @@ async def create_file_version(
     next_version = (max_version.version_number + 1) if max_version else 1
 
     # Copy current file to a new blob for versioning
-    blob_service = get_azure_blob_service()
+    blob_service = get_storage_service()
     if not blob_service:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -205,7 +205,7 @@ async def download_file_version(
             detail="Version introuvable"
         )
 
-    blob_service = get_azure_blob_service()
+    blob_service = get_storage_service()
     if not blob_service:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -269,7 +269,7 @@ async def restore_file_version(
             detail="Version introuvable"
         )
 
-    blob_service = get_azure_blob_service()
+    blob_service = get_storage_service()
     if not blob_service:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

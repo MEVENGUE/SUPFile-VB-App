@@ -5,6 +5,7 @@ import { shareService } from '../services/shareService'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import axios from 'axios'
+import { API_URL } from '../config/api'
 import Sidebar from '../components/Sidebar'
 import './SharedFilesPage.css'
 
@@ -20,7 +21,7 @@ const SharedFilesPage = () => {
     mutationFn: async (shareId: number) => {
       const token = localStorage.getItem('token')
       await axios.delete(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/share/${shareId}`,
+        `${API_URL}/share/${shareId}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -39,7 +40,7 @@ const SharedFilesPage = () => {
     mutationFn: async ({ shareId, isActive }: { shareId: number; isActive: boolean }) => {
       const token = localStorage.getItem('token')
       await axios.patch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/share/${shareId}/toggle`,
+        `${API_URL}/share/${shareId}/toggle`,
         { is_active: !isActive },
         {
           headers: { Authorization: `Bearer ${token}` }

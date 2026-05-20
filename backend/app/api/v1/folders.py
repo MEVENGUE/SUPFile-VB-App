@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.core.middleware import get_current_user_id
 from app.models.folder import Folder
 from app.models.file import File
-from app.services.azure_blob import get_azure_blob_service
+from app.services.storage_service import get_storage_service
 import logging
 import zipfile
 import io
@@ -814,7 +814,7 @@ def delete_folder(
             ).all()
             
             # Permanently delete files from Azure Blob Storage and database
-            blob_service = get_azure_blob_service()
+            blob_service = get_storage_service()
             for file in files:
                 # Delete from Azure Blob Storage
                 if blob_service:
@@ -879,7 +879,7 @@ async def download_folder(
             )
         ).all()
         
-        blob_service = get_azure_blob_service()
+        blob_service = get_storage_service()
         
         for file in files:
             try:

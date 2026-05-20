@@ -100,12 +100,7 @@ async def oauth_authorize(provider: str, request: Request):
 
     provider_config = OAUTH_PROVIDERS[provider]
     # Use OAUTH_CALLBACK_BASE_URL if set, otherwise derive from OAUTH_REDIRECT_BASE_URL
-    if settings.OAUTH_CALLBACK_BASE_URL:
-        callback_base = settings.OAUTH_CALLBACK_BASE_URL.rstrip('/')
-    else:
-        # Fallback: try to derive backend URL from frontend URL
-        # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
-        callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://').rstrip('/')
+    callback_base = settings.backend_public_url
     redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
     logger.info(f"OAuth authorize - provider: {provider}, redirect_uri: {redirect_uri}")
     logger.info(f"OAuth authorize - OAUTH_CALLBACK_BASE_URL: {settings.OAUTH_CALLBACK_BASE_URL}")
@@ -231,12 +226,7 @@ async def oauth_callback(
         client_secret = get_oauth_client_secret(provider)
         # Use OAUTH_CALLBACK_BASE_URL if set, otherwise derive from OAUTH_REDIRECT_BASE_URL
         # IMPORTANT: This must match EXACTLY the redirect_uri used in oauth_authorize
-        if settings.OAUTH_CALLBACK_BASE_URL:
-            callback_base = settings.OAUTH_CALLBACK_BASE_URL.rstrip('/')
-        else:
-            # Fallback: try to derive backend URL from frontend URL
-            # This is a workaround - OAUTH_CALLBACK_BASE_URL should be set explicitly
-            callback_base = settings.OAUTH_REDIRECT_BASE_URL.replace('supfile-webapp.vercel.app', 'supfile-vercel-app-production.up.railway.app').replace('localhost:3000', 'localhost:8000').replace('http://', 'https://').rstrip('/')
+        callback_base = settings.backend_public_url
         redirect_uri = f"{callback_base}/api/v1/auth/{provider}/callback"
         logger.info(f"OAuth callback - provider: {provider}, redirect_uri: {redirect_uri}")
         logger.info(f"OAuth callback - OAUTH_CALLBACK_BASE_URL: {settings.OAUTH_CALLBACK_BASE_URL}")

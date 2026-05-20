@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { getWsUrl } from '../config/api'
 
 interface WebSocketMessage {
   type: string
@@ -29,10 +30,7 @@ export const useWebSocket = (): UseWebSocketReturn => {
     }
 
     try {
-      const wsUrl = import.meta.env.VITE_WS_URL || 
-        `ws://${window.location.hostname}:8000/api/v1/ws?token=${token}`
-      
-      const ws = new WebSocket(wsUrl)
+      const ws = new WebSocket(getWsUrl(token))
 
       ws.onopen = () => {
         console.log('WebSocket connected')

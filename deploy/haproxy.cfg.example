@@ -1,0 +1,59 @@
+# HAProxy Paris — exemple (lb-paris)
+# Backend : web1-paris Nginx :80, healthcheck GET /health
+
+global
+    log /dev/log local0
+    maxconn 4096
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 10s
+    timeout client  300s
+    timeout server  300s
+
+frontend http_front
+    bind *:80
+    option forwardfor
+    acl is_health path_beg /health
+    acl is_chunked path_beg /api/v1/files/upload
+    acl is_ws hdr(Upgrade) -i WebSocket
+    acl is_read path_beg /api/v1/files /api/v1/search /api/v1/preview /api/v1/share /api/v1/users/me
+    acl is_write method POST PUT PATCH DELETE
+
+    use_backend supfile_health if is_health
+    use_backend websocket_backend if is_ws
+    use_backend supfile_writes if is_chunked
+    use_backend supfile_writes if is_write
+    use_backend supfile_reads if is_read
+    default_backend supfile_reads
+
+backend supfile_health
+    mode http
+    option httpchk GET /health
+    http-check expect status 200
+    server paris 10.10.1.11:80 check inter 2s rise 2 fall 3
+    server ny 10.10.2.11:80 check inter 2s rise 2 fall 3 weight 20
+
+backend supfile_reads
+    balance leastconn
+    option httpchk GET /health
+    http-check expect status 200
+    server paris 10.10.1.11:80 check inter 2s rise 2 fall 3 weight 100
+    server ny 10.10.2.11:80 check inter 2s rise 2 fall 3 weight 100
+
+backend supfile_writes
+    balance source
+    option httpchk GET /health
+    http-check expect status 200
+    server paris-primary 10.10.1.11:80 check inter 2s rise 2 fall 3
+    server paris-secondary 10.10.1.12:80 check inter 2s rise 2 fall 3 backup
+
+backend websocket_backend
+    balance source
+    option httpchk GET /health
+    http-check expect status 200
+    server paris-primary 10.10.1.11:80 check inter 2s rise 2 fall 3
+    server paris-secondary 10.10.1.12:80 check inter 2s rise 2 fall 3 backup

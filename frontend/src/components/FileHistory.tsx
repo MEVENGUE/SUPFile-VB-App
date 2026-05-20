@@ -5,7 +5,7 @@ import axios from 'axios'
 import { getAuthHeaders } from '../services/authService'
 import './FileHistory.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+import { API_URL } from '../config/api'
 
 interface HistoryItem {
   id: number

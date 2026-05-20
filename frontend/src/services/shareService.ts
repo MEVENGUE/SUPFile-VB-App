@@ -1,23 +1,5 @@
 import axios from 'axios'
-
-// Get API URL from environment or use default
-const getApiUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL
-  if (envUrl) {
-    return envUrl
-  }
-  // In production, try to infer from current origin
-  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // Try to use the backend URL from Railway or other hosting
-    // This should be set via VITE_API_URL in Vercel environment variables
-    console.warn('VITE_API_URL not set, using fallback. Please configure VITE_API_URL in Vercel.')
-    return 'https://supfile-vercel-app-production.up.railway.app/api/v1'
-  }
-  return 'http://localhost:8000/api/v1'
-}
-
-const API_URL = getApiUrl()
-console.log('API URL configured:', API_URL)
+import { API_URL } from '../config/api'
 
 export interface ShareLink {
   id: number

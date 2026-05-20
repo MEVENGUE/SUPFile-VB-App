@@ -1,0 +1,28 @@
+[Unit]
+Description=SUPFile API (FastAPI / Uvicorn)
+Documentation=https://github.com/your-org/supfile
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vagrant
+Group=vagrant
+WorkingDirectory=/opt/supfile/backend
+
+# Variables d'environnement (DATABASE_URL, SECRET_KEY, CORS_ORIGINS, etc.)
+EnvironmentFile=-/etc/supfile/supfile.env
+
+# Module ASGI : package app/ + main.py → app.main:app (pas main:app)
+ExecStart=/opt/supfile/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --proxy-headers --forwarded-allow-ips='*'
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# Sécurité basique
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

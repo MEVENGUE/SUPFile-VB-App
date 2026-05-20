@@ -8,7 +8,7 @@ import { getAuthHeaders } from '../services/authService'
 import { useAuth } from '../contexts/AuthContext'
 import './FileComments.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+import { API_URL } from '../config/api'
 
 interface Comment {
   id: number

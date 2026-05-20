@@ -190,6 +190,17 @@ class AzureBlobService:
         except AzureError:
             return False
     
+    def get_preview_url(self, file_id: int, user_id: int, blob_name: str) -> str:
+        """URL de prévisualisation (SAS Azure)."""
+        return self.generate_sas_url(blob_name, expiry_minutes=60)
+
+    def health_status(self) -> dict:
+        return {
+            "backend": "azure",
+            "container": self.container_name,
+            "writable": True,
+        }
+
     def generate_sas_url(
         self,
         blob_name: str,

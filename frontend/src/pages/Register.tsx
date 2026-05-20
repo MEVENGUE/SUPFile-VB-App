@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { API_URL } from '../config/api'
 import { toast } from 'react-toastify'
 import './Auth.css'
 
@@ -97,7 +98,7 @@ const Register = () => {
 
         <div className="oauth-buttons">
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/google/authorize`}
+            href={`${API_URL}/auth/google/authorize`}
             className="oauth-button oauth-google"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -109,7 +110,7 @@ const Register = () => {
             Continuer avec Google
           </a>
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/github/authorize`}
+            href={`${API_URL}/auth/github/authorize`}
             className="oauth-button oauth-github"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -118,7 +119,7 @@ const Register = () => {
             Continuer avec GitHub
           </a>
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/microsoft/authorize`}
+            href={`${API_URL}/auth/microsoft/authorize`}
             className="oauth-button oauth-microsoft"
           >
             <svg width="18" height="18" viewBox="0 0 23 23" fill="none">

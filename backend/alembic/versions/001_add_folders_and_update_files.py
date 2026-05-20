@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '001_add_folders'
@@ -25,6 +24,50 @@ def upgrade() -> None:
     inspector = inspect(conn)
     tables = inspector.get_table_names()
     
+    # Bootstrap core tables for new MySQL/Galera clusters
+    if 'users' not in tables:
+        op.create_table(
+            'users',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('email', sa.String(), nullable=False),
+            sa.Column('username', sa.String(), nullable=False),
+            sa.Column('hashed_password', sa.String(), nullable=True),
+            sa.Column('full_name', sa.String(), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=True, server_default=sa.text('1')),
+            sa.Column('is_admin', sa.Boolean(), nullable=True, server_default=sa.text('0')),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
+        op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+        op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+
+    if 'files' not in tables:
+        op.create_table(
+            'files',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('user_id', sa.Integer(), nullable=False),
+            sa.Column('filename', sa.String(), nullable=False),
+            sa.Column('original_filename', sa.String(), nullable=False),
+            sa.Column('file_size', sa.BigInteger(), nullable=False),
+            sa.Column('content_type', sa.String(), nullable=True),
+            sa.Column('blob_name', sa.String(), nullable=False),
+            sa.Column('blob_url', sa.String(), nullable=True),
+            sa.Column('upload_region', sa.String(), nullable=True),
+            sa.Column('is_public', sa.Boolean(), nullable=True, server_default=sa.text('0')),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id']),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('blob_name')
+        )
+        op.create_index(op.f('ix_files_id'), 'files', ['id'], unique=False)
+        op.create_index(op.f('ix_files_user_id'), 'files', ['user_id'], unique=False)
+
+    # Refresh schema state
+    tables = inspector.get_table_names()
+
     # Create folders table only if it doesn't exist
     if 'folders' not in tables:
         op.create_table(
@@ -33,7 +76,7 @@ def upgrade() -> None:
             sa.Column('name', sa.String(), nullable=False),
             sa.Column('user_id', sa.Integer(), nullable=False),
             sa.Column('parent_id', sa.Integer(), nullable=True),
-            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
             sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
             sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
             sa.ForeignKeyConstraint(['parent_id'], ['folders.id'], ),

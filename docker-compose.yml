@@ -29,6 +29,7 @@ services:
     container_name: supfile-backend
     environment:
       - DATABASE_URL=postgresql://supfile_user:supfile_password@postgres:5432/supfile
+      - PORT=8000
       - SECRET_KEY=dev-secret-key-change-in-production-min-32-chars
       - JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production-min-32-chars
       - AZURE_STORAGE_ACCOUNT_NAME=${AZURE_STORAGE_ACCOUNT_NAME:-}
