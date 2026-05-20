@@ -5,6 +5,7 @@ Handles file upload, download, and deletion
 import os
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, BinaryIO
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, ContentSettings
 from azure.core.exceptions import AzureError
@@ -94,8 +95,9 @@ class AzureBlobService:
 
     def upload_file(
         self,
-        file_content: bytes,
-        blob_name: str,
+        file_content: Optional[bytes] = None,
+        file_path: Optional[Path] = None,
+        blob_name: str = "",
         content_type: Optional[str] = None,
         metadata: Optional[dict] = None
     ) -> str:
@@ -117,12 +119,21 @@ class AzureBlobService:
             # Sanitize metadata before upload
             sanitized_metadata = self._sanitize_metadata(metadata or {})
             
-            blob_client.upload_blob(
-                file_content,
-                overwrite=True,
-                content_settings=content_settings_obj,
-                metadata=sanitized_metadata
-            )
+            if file_path is not None:
+                with file_path.open("rb") as upload_source:
+                    blob_client.upload_blob(
+                        upload_source,
+                        overwrite=True,
+                        content_settings=content_settings_obj,
+                        metadata=sanitized_metadata
+                    )
+            else:
+                blob_client.upload_blob(
+                    file_content,
+                    overwrite=True,
+                    content_settings=content_settings_obj,
+                    metadata=sanitized_metadata
+                )
             
             blob_url = blob_client.url
             logger.info(f"Uploaded file to blob: {blob_name}")

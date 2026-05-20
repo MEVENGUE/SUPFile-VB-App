@@ -2,6 +2,7 @@
 Share endpoints: create, get, delete share links
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from app.core.rate_limit import limiter
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from typing import List, Optional
@@ -64,6 +65,7 @@ class ShareAccessResponse(BaseModel):
 
 
 @router.post("/", response_model=ShareLinkResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
 async def create_share_link(
     share_data: ShareLinkCreate,
     current_user_id: int = Depends(get_current_user_id),
@@ -118,10 +120,8 @@ async def create_share_link(
     # Generate unique token
     token = str(uuid.uuid4())
 
-    # Calculate expiration date if provided
-    expires_at = None
-    if share_data.expires_in_days:
-        expires_at = datetime.utcnow() + timedelta(days=share_data.expires_in_days)
+    # Calculate expiration date (default 7 days if not provided)
+    expires_at = datetime.utcnow() + timedelta(days=share_data.expires_in_days if share_data.expires_in_days is not None else 7)
 
     # Hash password if provided
     password_hash = None
@@ -201,6 +201,7 @@ async def list_share_links(
 
 
 @router.get("/{token}", response_model=ShareAccessResponse)
+@limiter.limit("60/minute")
 async def access_share_link(
     token: str,
     password: Optional[str] = Query(None),

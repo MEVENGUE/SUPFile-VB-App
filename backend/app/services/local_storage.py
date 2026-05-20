@@ -36,14 +36,22 @@ class LocalStorageService:
 
     def upload_file(
         self,
-        file_content: bytes,
-        blob_name: str,
+        file_content: Optional[bytes] = None,
+        file_path: Optional[Path] = None,
+        blob_name: str = "",
         content_type: Optional[str] = None,
         metadata: Optional[dict] = None,
     ) -> str:
         path = self._resolve_path(blob_name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(file_content)
+
+        if file_path is not None:
+            shutil.copyfile(file_path, path)
+        elif file_content is not None:
+            path.write_bytes(file_content)
+        else:
+            raise ValueError("Either file_content or file_path must be provided")
+
         logger.info("Uploaded file to %s", path)
         return str(path)
 

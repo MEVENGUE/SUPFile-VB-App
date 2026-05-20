@@ -84,8 +84,8 @@ async def create_file_version(
         
         # Upload as new version
         blob_service.upload_file(
-            version_blob_name,
-            current_file_content,
+            file_content=current_file_content,
+            blob_name=version_blob_name,
             content_type=file.content_type
         )
 
@@ -286,8 +286,8 @@ async def restore_file_version(
         current_file_content = blob_service.download_file(file.blob_name)
         version_blob_name = f"{file.blob_name}_v{next_version}"
         blob_service.upload_file(
-            version_blob_name,
-            current_file_content,
+            file_content=current_file_content,
+            blob_name=version_blob_name,
             content_type=file.content_type
         )
 
@@ -305,8 +305,8 @@ async def restore_file_version(
         # Now restore the version
         version_content = blob_service.download_file(version.blob_name)
         blob_service.upload_file(
-            file.blob_name,
-            version_content,
+            file_content=version_content,
+            blob_name=file.blob_name,
             content_type=version.content_type
         )
 

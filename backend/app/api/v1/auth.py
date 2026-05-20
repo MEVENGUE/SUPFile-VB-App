@@ -3,6 +3,7 @@ Authentication endpoints: register, login, refresh token
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from app.core.rate_limit import limiter
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from app.core.database import get_db
@@ -48,6 +49,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
 async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     """
     Register a new user
@@ -85,6 +87,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -122,6 +125,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("20/minute")
 async def refresh_token(token_data: RefreshTokenRequest):
     """
     Refresh access token using refresh token

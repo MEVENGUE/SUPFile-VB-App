@@ -9,28 +9,66 @@ from typing import Optional, Dict
 import logging
 import httpx
 import uuid
-import time
+from datetime import datetime, timedelta
 from urllib.parse import urlencode, quote
 
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User
 from app.models.oauth_account import OAuthAccount
+from app.models.oauth_cache import OAuthProcessedCode, OAuthTemporaryToken
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Cache pour éviter de traiter le même code OAuth plusieurs fois
-# Les codes sont valides seulement quelques minutes, donc on peut les garder en cache
-_processed_oauth_codes = set()
-
-# Cache temporaire pour stocker les tokens JWT avant redirection
-# Structure: {temp_token: {"access_token": "...", "refresh_token": "...", "expires_at": timestamp}}
-# Les tokens expirent après 5 minutes
-_oauth_token_cache: Dict[str, Dict] = {}
+# Cache persistant pour éviter de traiter le même code OAuth plusieurs fois
+# et pour stocker temporairement les tokens JWT avant redirection.
 TOKEN_CACHE_EXPIRY = 300  # 5 minutes en secondes
+PROCESSED_CODE_EXPIRY = 300  # 5 minutes
+
+
+def _cleanup_expired_oauth_entries(db: Session):
+    now = datetime.utcnow()
+    db.query(OAuthProcessedCode).filter(OAuthProcessedCode.expires_at < now).delete(synchronize_session=False)
+    db.query(OAuthTemporaryToken).filter(OAuthTemporaryToken.expires_at < now).delete(synchronize_session=False)
+    db.commit()
+
+
+def _is_oauth_code_processed(db: Session, code_key: str) -> bool:
+    _cleanup_expired_oauth_entries(db)
+    existing = db.query(OAuthProcessedCode).filter(OAuthProcessedCode.code_key == code_key).first()
+    return existing is not None
+
+
+def _mark_oauth_code_processed(db: Session, code_key: str):
+    expires_at = datetime.utcnow() + timedelta(seconds=PROCESSED_CODE_EXPIRY)
+    entry = OAuthProcessedCode(code_key=code_key, expires_at=expires_at)
+    db.merge(entry)
+    db.commit()
+
+
+def _store_temporary_oauth_token(db: Session, temp_token: str, access_token: str, refresh_token: str):
+    expires_at = datetime.utcnow() + timedelta(seconds=TOKEN_CACHE_EXPIRY)
+    temporary = OAuthTemporaryToken(
+        temp_token=temp_token,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=expires_at,
+    )
+    db.merge(temporary)
+    db.commit()
+
+
+def _pop_temporary_oauth_token(db: Session, temp_token: str) -> Optional[OAuthTemporaryToken]:
+    _cleanup_expired_oauth_entries(db)
+    token_entry = db.query(OAuthTemporaryToken).filter(OAuthTemporaryToken.temp_token == temp_token).first()
+    if token_entry:
+        db.delete(token_entry)
+        db.commit()
+    return token_entry
 
 # OAuth2 provider configurations
 OAUTH_PROVIDERS = {
@@ -80,6 +118,7 @@ def get_oauth_client_secret(provider: str) -> str:
 
 
 @router.get("/{provider}/authorize")
+@limiter.limit("10/minute")
 async def oauth_authorize(provider: str, request: Request):
     """
     Initiate OAuth2 authorization flow
@@ -126,6 +165,7 @@ async def oauth_authorize(provider: str, request: Request):
 
 @router.get("/{provider}/callback")
 @router.post("/{provider}/callback")
+@limiter.limit("15/minute")
 async def oauth_callback(
     provider: str,
     request: Request,
@@ -182,19 +222,13 @@ async def oauth_callback(
     if code:
         code_key = f"{provider}:{code}"
         code_key_short = f"{provider}:{code[:30]}..." if len(code) > 30 else code_key
-        if code_key in _processed_oauth_codes:
+        if _is_oauth_code_processed(db, code_key):
             logger.warning(f"OAuth callback - Code already processed, redirecting to frontend: {code_key_short}")
-            # Code already processed, redirect to frontend with error
             error_message = quote("Ce code d'autorisation a déjà été utilisé. Veuillez réessayer.", safe='')
             redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
             return RedirectResponse(url=redirect_url, status_code=302)
-        # Mark code as being processed (will be removed if invalid_grant error occurs)
-        _processed_oauth_codes.add(code_key)
-        logger.info(f"OAuth callback - Added code to cache: {code_key_short} (cache size: {len(_processed_oauth_codes)})")
-        # Clean old codes (keep only last 1000 to prevent memory leak)
-        if len(_processed_oauth_codes) > 1000:
-            _processed_oauth_codes.clear()
-            logger.info("OAuth callback - Cleared processed codes cache")
+        _mark_oauth_code_processed(db, code_key)
+        logger.info(f"OAuth callback - Added code to persistent cache: {code_key_short}")
     
     if error:
         logger.error(f"OAuth2 error from {provider}: {error}")
@@ -275,11 +309,11 @@ async def oauth_callback(
                 logger.error(f"OAuth2 error in response from {provider}: {error_code} - {error_description}")
                 
                 if error_code == 'invalid_grant' or error_code == 'bad_verification_code':
-                    # Remove code from cache if invalid_grant (code might be expired, allow retry)
                     if code and code_key:
                         code_key_full = f"{provider}:{code}"
-                        _processed_oauth_codes.discard(code_key_full)
-                        logger.info(f"OAuth callback - Removed invalid code from cache: {code_key} (cache size: {len(_processed_oauth_codes)})")
+                        db.query(OAuthProcessedCode).filter(OAuthProcessedCode.code_key == code_key_full).delete()
+                        db.commit()
+                        logger.info(f"OAuth callback - Removed invalid code from persistent cache: {code_key}")
                     error_message = quote("Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer.", safe='')
                     redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
                     logger.info(f"OAuth redirecting to frontend (invalid_grant): {redirect_url}")
@@ -305,11 +339,11 @@ async def oauth_callback(
                 # Handle specific OAuth errors
                 if error_code == 'invalid_grant' or error_code == 'bad_verification_code':
                     logger.error(f"OAuth2 invalid_grant error from {provider} - Code may have expired or already been used")
-                    # Remove code from cache if invalid_grant (code might be expired, allow retry)
                     if code and code_key:
                         code_key_full = f"{provider}:{code}"
-                        _processed_oauth_codes.discard(code_key_full)
-                        logger.info(f"OAuth callback - Removed invalid code from cache: {code_key} (cache size: {len(_processed_oauth_codes)})")
+                        db.query(OAuthProcessedCode).filter(OAuthProcessedCode.code_key == code_key_full).delete()
+                        db.commit()
+                        logger.info(f"OAuth callback - Removed invalid code from persistent cache: {code_key}")
                     error_message = quote("Le code d'autorisation a expiré ou a déjà été utilisé. Veuillez réessayer.", safe='')
                     redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
                     logger.info(f"OAuth redirecting to frontend (invalid_grant): {redirect_url}")
@@ -498,21 +532,9 @@ async def oauth_callback(
         if provider == 'microsoft':
             # Store tokens in temporary cache with short-lived token to avoid long URLs
             temp_token = str(uuid.uuid4())
-            expires_at = time.time() + TOKEN_CACHE_EXPIRY
-            _oauth_token_cache[temp_token] = {
-                "access_token": access_token_jwt,
-                "refresh_token": refresh_token_jwt,
-                "expires_at": expires_at
-            }
-            
-            # Clean old tokens from cache
-            current_time = time.time()
-            expired_tokens = [token for token, data in _oauth_token_cache.items() if data["expires_at"] < current_time]
-            for token in expired_tokens:
-                _oauth_token_cache.pop(token, None)
+            _store_temporary_oauth_token(db, temp_token, access_token_jwt, refresh_token_jwt)
             
             # Redirect to frontend with short temporary token
-            # Use HTML response with JavaScript redirect to avoid GET request after POST
             redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/auth/callback?token={temp_token}"
             logger.info(f"OAuth success (Microsoft) - redirecting to frontend with temp token (URL length: {len(redirect_url)})")
             
@@ -584,8 +606,9 @@ async def oauth_callback(
                     # Remove code from cache if invalid_grant
                     if code:
                         code_key_full = f"{provider}:{code}"
-                        _processed_oauth_codes.discard(code_key_full)
-                        logger.info(f"OAuth callback - Removed invalid code from cache (cache size: {len(_processed_oauth_codes)})")
+                        db.query(OAuthProcessedCode).filter(OAuthProcessedCode.code_key == code_key_full).delete()
+                        db.commit()
+                        logger.info("OAuth callback - Removed invalid code from persistent cache")
                     error_message = quote("Le code d'autorisation a expiré. Veuillez réessayer.", safe='')
                     redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_code_expired&message={error_message}"
                     return RedirectResponse(url=redirect_url, status_code=302)
@@ -612,16 +635,19 @@ async def oauth_callback(
             # Remove code from cache if invalid_grant
             if code:
                 code_key_full = f"{provider}:{code}"
-                _processed_oauth_codes.discard(code_key_full)
-                logger.info(f"OAuth callback - Removed invalid code from cache (cache size: {len(_processed_oauth_codes)})")
+                db.query(OAuthProcessedCode).filter(OAuthProcessedCode.code_key == code_key_full).delete()
+                db.commit()
+                logger.info(f"OAuth callback - Removed invalid code from persistent cache")
         error_message_encoded = quote(error_message, safe='')
         redirect_url = f"{settings.OAUTH_REDIRECT_BASE_URL.rstrip('/')}/login?error=oauth_error&message={error_message_encoded}"
         return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.get("/exchange-token/{temp_token}")
+@limiter.limit("10/minute")
 async def exchange_oauth_token(
-    temp_token: str
+    temp_token: str,
+    db: Session = Depends(get_db)
 ):
     """
     Exchange temporary OAuth token for JWT tokens
@@ -631,29 +657,23 @@ async def exchange_oauth_token(
     logger.info(f"OAuth token exchange request - temp_token: {temp_token[:20]}...")
     
     # Check if token exists in cache
-    if temp_token not in _oauth_token_cache:
-        logger.warning(f"OAuth token exchange - Token not found in cache: {temp_token[:20]}...")
-        logger.info(f"OAuth token exchange - Cache size: {len(_oauth_token_cache)}")
+    token_data = _pop_temporary_oauth_token(db, temp_token)
+    if token_data is None:
+        logger.warning(f"OAuth token exchange - Token not found in persistent cache: {temp_token[:20]}...")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Token not found or expired"
         )
-    
-    token_data = _oauth_token_cache[temp_token]
-    
-    # Check if token has expired
-    if time.time() > token_data["expires_at"]:
-        _oauth_token_cache.pop(temp_token, None)
+
+    if datetime.utcnow() > token_data.expires_at:
         logger.warning(f"OAuth token exchange - Token expired: {temp_token[:20]}...")
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Token expired"
         )
-    
-    # Remove token from cache (one-time use)
-    access_token = token_data["access_token"]
-    refresh_token = token_data["refresh_token"]
-    _oauth_token_cache.pop(temp_token, None)
+
+    access_token = token_data.access_token
+    refresh_token = token_data.refresh_token
     
     logger.info(f"OAuth token exchange - Success, token removed from cache")
     

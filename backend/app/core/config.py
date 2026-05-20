@@ -2,7 +2,7 @@
 Configuration SUPFile — déploiement hybride (Vercel + VM/Tailscale) ou cloud legacy.
 """
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 import os
 
 
@@ -87,6 +87,9 @@ class Settings(BaseSettings):
 
     # Backend public (callbacks OAuth — Funnel / HAProxy)
     OAUTH_CALLBACK_BASE_URL: str = os.getenv("OAUTH_CALLBACK_BASE_URL", "http://localhost:8080")
+
+    # Optional Redis backend for rate limiting and distributed OAuth cache
+    REDIS_URL: Optional[str] = os.getenv("REDIS_URL", "")
 
     # Deployment targets
     PRIMARY_DC: str = "PARIS"

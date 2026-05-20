@@ -9,6 +9,9 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
+import tempfile
+import uuid
 from app.core.database import get_db
 from app.core.security import validate_file_extension, validate_file_size
 from app.core.middleware import get_current_user_id
@@ -75,9 +78,33 @@ def _get_chunk_dir(upload_id: str, user_id: int) -> Path:
     return chunk_dir
 
 
+def _stream_upload_to_tempfile(file: UploadFile) -> Path:
+    temp_dir = Path(settings.CHUNK_TMP_PATH).resolve()
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_path = temp_dir / f"upload-{uuid.uuid4().hex}.tmp"
+    total_size = 0
+    with temp_path.open("wb") as out_file:
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if not validate_file_size(total_size):
+                out_file.close()
+                temp_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File size exceeds maximum allowed size: {settings.MAX_FILE_SIZE_MB}MB",
+                )
+            out_file.write(chunk)
+
+    return temp_path
+
+
 def _save_file_record(
     *,
-    file_content: bytes,
+    file_path: Path,
     filename: str,
     content_type: Optional[str],
     folder_id: Optional[int],
@@ -92,42 +119,55 @@ def _save_file_record(
         )
 
     blob_name = storage.generate_blob_name(current_user_id, filename)
-    blob_url = storage.upload_file(
-        file_content=file_content,
-        blob_name=blob_name,
-        content_type=content_type,
-        metadata={
-            "user_id": str(current_user_id),
-            "original_filename": filename,
-        },
-    )
+    blob_url = None
+    try:
+        blob_url = storage.upload_file(
+            file_path=file_path,
+            blob_name=blob_name,
+            content_type=content_type,
+            metadata={
+                "user_id": str(current_user_id),
+                "original_filename": filename,
+            },
+        )
 
-    db_file = File(
-        user_id=current_user_id,
-        folder_id=folder_id,
-        filename=blob_name,
-        original_filename=filename,
-        file_size=len(file_content),
-        content_type=content_type,
-        blob_name=blob_name,
-        blob_url=blob_url,
-        upload_region=settings.UPLOAD_REGION,
-        is_public=False,
-    )
-    db.add(db_file)
-    db.commit()
-    db.refresh(db_file)
+        db_file = File(
+            user_id=current_user_id,
+            folder_id=folder_id,
+            filename=blob_name,
+            original_filename=filename,
+            file_size=file_path.stat().st_size,
+            content_type=content_type,
+            blob_name=blob_name,
+            blob_url=blob_url,
+            upload_region=settings.UPLOAD_REGION,
+            is_public=False,
+        )
+        db.add(db_file)
+        db.commit()
+        db.refresh(db_file)
 
-    return FileResponse(
-        id=db_file.id,
-        filename=db_file.filename,
-        original_filename=db_file.original_filename,
-        file_size=db_file.file_size,
-        content_type=db_file.content_type,
-        created_at=db_file.created_at.isoformat(),
-        upload_region=db_file.upload_region,
-        deleted_at=db_file.deleted_at.isoformat() if db_file.deleted_at else None,
-    )
+        return FileResponse(
+            id=db_file.id,
+            filename=db_file.filename,
+            original_filename=db_file.original_filename,
+            file_size=db_file.file_size,
+            content_type=db_file.content_type,
+            created_at=db_file.created_at.isoformat(),
+            upload_region=db_file.upload_region,
+            deleted_at=db_file.deleted_at.isoformat() if db_file.deleted_at else None,
+        )
+    except Exception as e:
+        db.rollback()
+        if blob_url and storage:
+            try:
+                storage.delete_file(blob_name)
+            except Exception:
+                logger.warning("Failed to delete orphaned blob after DB error: %s", blob_name)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur lors de l'enregistrement du fichier."
+        )
 
 
 @router.post("/upload/init", response_model=ChunkInitResponse)
@@ -173,34 +213,37 @@ async def complete_chunk_upload(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed")
 
     chunk_dir = _get_chunk_dir(payload.upload_id, current_user_id)
-    parts = []
-    for idx in range(payload.total_chunks):
-        part = chunk_dir / f"{idx}.part"
-        if not part.is_file():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Missing chunk {idx}")
-        parts.append(part.read_bytes())
+    temp_path = Path(settings.CHUNK_TMP_PATH).resolve() / f"{payload.upload_id}-complete.tmp"
+    temp_path.parent.mkdir(parents=True, exist_ok=True)
 
-    file_content = b"".join(parts)
-    if not validate_file_size(len(file_content)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size exceeds maximum allowed size: {settings.MAX_FILE_SIZE_MB}MB",
+    try:
+        with temp_path.open("wb") as out_file:
+            for idx in range(payload.total_chunks):
+                part = chunk_dir / f"{idx}.part"
+                if not part.is_file():
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Missing chunk {idx}")
+                with part.open("rb") as part_file:
+                    shutil.copyfileobj(part_file, out_file)
+
+        if not validate_file_size(temp_path.stat().st_size):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File size exceeds maximum allowed size: {settings.MAX_FILE_SIZE_MB}MB",
+            )
+
+        response = _save_file_record(
+            file_path=temp_path,
+            filename=payload.filename,
+            content_type=payload.content_type,
+            folder_id=payload.folder_id,
+            current_user_id=current_user_id,
+            db=db,
         )
 
-    response = _save_file_record(
-        file_content=file_content,
-        filename=payload.filename,
-        content_type=payload.content_type,
-        folder_id=payload.folder_id,
-        current_user_id=current_user_id,
-        db=db,
-    )
-
-    # Cleanup chunks
-    for file in chunk_dir.glob("*.part"):
-        file.unlink(missing_ok=True)
-    chunk_dir.rmdir()
-    return response
+        return response
+    finally:
+        shutil.rmtree(chunk_dir, ignore_errors=True)
+        temp_path.unlink(missing_ok=True)
 
 
 @router.post("/upload", response_model=FileResponse, status_code=status.HTTP_201_CREATED)
@@ -211,7 +254,7 @@ async def upload_file(
     db: Session = Depends(get_db)
 ):
     """
-    Upload a file to storage (GlusterFS/local or Azure)
+    Upload a file to storage (GlusterFS/local or Azure) using streaming to temporary disk.
     """
     # Validate file extension
     if not file.filename:
@@ -219,15 +262,13 @@ async def upload_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Filename is required"
         )
-    
-    # Extract extension
+
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "none"
-    
-    # Debug logging
+
     logger.info(f"File upload attempt: {file.filename}, extension: '{ext}'")
     logger.info(f"Allowed extensions list: {settings.allowed_extensions_list}")
     logger.info(f"Is '{ext}' in list? {ext in settings.allowed_extensions_list}")
-    
+
     if not validate_file_extension(file.filename):
         logger.warning(f"File upload rejected: extension '{ext}' not allowed. Filename: {file.filename}")
         logger.warning(f"Allowed extensions: {settings.ALLOWED_EXTENSIONS}")
@@ -236,95 +277,37 @@ async def upload_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type not allowed. Extension '{ext}' is not in the allowed list. Allowed extensions: {settings.ALLOWED_EXTENSIONS}"
         )
-    
-    # Read file content
-    file_content = await file.read()
-    
-    # Validate file size
-    if not validate_file_size(len(file_content)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size exceeds maximum allowed size: {settings.MAX_FILE_SIZE_MB}MB"
-        )
-    
-    # Validate folder_id if provided
-    if folder_id is not None:
-        from app.models.folder import Folder
-        from sqlalchemy import and_
-        folder = db.query(Folder).filter(
-            and_(
-                Folder.id == folder_id,
-                Folder.user_id == current_user_id,
-                Folder.deleted_at.is_(None)
-            )
-        ).first()
-        
-        if not folder:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dossier introuvable"
-            )
-    
-    # Generate blob name
-    storage = get_storage_service()
-    if not storage:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Stockage non configuré. Vérifier STORAGE_BACKEND et UPLOAD_PATH (ou Azure).",
-        )
 
-    blob_name = storage.generate_blob_name(
-        current_user_id,
-        file.filename
-    )
-    
+    temp_path = _stream_upload_to_tempfile(file)
+
     try:
-        blob_url = storage.upload_file(
-            file_content=file_content,
-            blob_name=blob_name,
+        if folder_id is not None:
+            from app.models.folder import Folder
+            from sqlalchemy import and_
+            folder = db.query(Folder).filter(
+                and_(
+                    Folder.id == folder_id,
+                    Folder.user_id == current_user_id,
+                    Folder.deleted_at.is_(None)
+                )
+            ).first()
+
+            if not folder:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dossier introuvable"
+                )
+
+        return _save_file_record(
+            file_path=temp_path,
+            filename=file.filename,
             content_type=file.content_type,
-            metadata={
-                "user_id": str(current_user_id),
-                "original_filename": file.filename,
-            }
+            folder_id=folder_id,
+            current_user_id=current_user_id,
+            db=db,
         )
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Error uploading file to storage: {str(e)}\n{error_details}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error uploading file to storage: {str(e)}"
-        )
-    
-    # Save metadata to database
-    db_file = File(
-        user_id=current_user_id,
-        folder_id=folder_id,
-        filename=blob_name,
-        original_filename=file.filename,
-        file_size=len(file_content),
-        content_type=file.content_type,
-        blob_name=blob_name,
-        blob_url=blob_url,
-        upload_region=settings.UPLOAD_REGION,
-        is_public=False
-    )
-    
-    db.add(db_file)
-    db.commit()
-    db.refresh(db_file)
-    
-    return FileResponse(
-        id=db_file.id,
-        filename=db_file.filename,
-        original_filename=db_file.original_filename,
-        file_size=db_file.file_size,
-        content_type=db_file.content_type,
-        created_at=db_file.created_at.isoformat(),
-        upload_region=db_file.upload_region,
-        deleted_at=db_file.deleted_at.isoformat() if db_file.deleted_at else None
-    )
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @router.get("/", response_model=FileListResponse)
