@@ -1,4 +1,4 @@
-# 🚀 SUPFile - Secure Cloud File Storage System
+﻿# 🚀 SUPFile - Secure Hybrid Cloud File Storage
 
 <div align="center">
 
@@ -8,9 +8,9 @@
 ![React](https://img.shields.io/badge/react-18.2+-61dafb.svg)
 ![FastAPI](https://img.shields.io/badge/fastapi-0.104+-009688.svg)
 
-**Système de stockage de fichiers cloud sécurisé** - Projet académique SUPINFO
+**SUPFile** est une solution de stockage de fichiers sécurisée et hybride pour un projet académique SUPINFO.
 
-[🌐 Application Live](https://supfile-webapp.vercel.app) • [📚 Documentation Complète](./DOCUMENTATION.md) • [📊 Diagrammes](./DIAGRAMS.md)
+[📚 Documentation Complète](./DOCUMENTATION.md) • [📊 Diagrammes](./DIAGRAMS.md)
 
 </div>
 
@@ -18,335 +18,227 @@
 
 ## 📋 Table des Matières
 
-- [Vue d'ensemble](#-vue-densemble)
+- [Vue d'ensemble](#-vue-doverview)
 - [Fonctionnalités](#-fonctionnalités)
-- [Architecture](#-architecture)
-- [Installation](#-installation)
+- [Architecture hybride](#-architecture-hybride)
+- [Installation locale](#-installation-locale)
 - [Déploiement](#-déploiement)
 - [Documentation](#-documentation)
 - [Technologies](#-technologies)
-- [Contributeurs](#-contributeurs)
+- [Contribuer](#-contribuer)
 
 ---
 
 ## 🎯 Vue d'ensemble
 
-**SUPFile** est une application web moderne de stockage de fichiers cloud sécurisée, inspirée de Dropbox. Elle permet aux utilisateurs de stocker, organiser, partager et gérer leurs fichiers de manière sécurisée dans le cloud.
+SUPFile est une application web de stockage de fichiers moderne qui combine :
 
-### ✨ Points Forts
+- un frontend React déployé sur Vercel,
+- un backend FastAPI exécuté sur des machines privées,
+- un stockage partagé GlusterFS sur plusieurs nœuds,
+- un fallback Azure Blob Storage pour la résilience cloud.
 
-- 🔐 **Authentification multi-providers** : JWT, OAuth2 (Google, GitHub, Microsoft)
-- 📁 **Gestion complète** : Fichiers, dossiers, corbeille, recherche
-- 🔗 **Partage sécurisé** : Liens publics avec expiration et mot de passe
-- 📊 **Dashboard interactif** : Statistiques et visualisations
-- 🌍 **Multi-régions** : Stockage Azure Blob Storage
-- 📱 **Responsive** : Interface adaptative mobile/desktop
-- 🎨 **Thème clair/sombre** : Personnalisation de l'interface
+Cette architecture hybride est conçue pour un déploiement souple en production tout en restant compatible avec un environnement local de développement.
 
 ---
 
-## 🎨 Fonctionnalités
+## ✨ Fonctionnalités principales
 
-### 🔐 Authentification
-
-- ✅ **Inscription/Connexion** : Email et mot de passe avec validation
-- ✅ **OAuth2** : Connexion via Google, GitHub, Microsoft
-- ✅ **JWT Tokens** : Access token + Refresh token sécurisés
-- ✅ **Sessions persistantes** : Gestion automatique des tokens
-- ✅ **Sécurité** : Hachage bcrypt (12 rounds), protection CSRF
-
-**Fonctionnement** :
-1. L'utilisateur s'inscrit ou se connecte via OAuth
-2. Le backend génère des tokens JWT (access + refresh)
-3. Les tokens sont stockés dans le localStorage (frontend)
-4. Chaque requête API inclut le token dans le header `Authorization`
-5. Le backend valide le token et identifie l'utilisateur
-
-### 📤 Gestion des Fichiers
-
-- ✅ **Upload** : Drag & drop, barre de progression, validation
-- ✅ **Téléchargement** : Téléchargement individuel ou en lot
-- ✅ **Prévisualisation** : Images, PDF, texte directement dans le navigateur
-- ✅ **Recherche** : Recherche par nom, type, contenu
-- ✅ **Renommage** : Modification du nom de fichier
-- ✅ **Déplacement** : Déplacement entre dossiers
-- ✅ **Métadonnées** : Taille, date, type, région de stockage
-
-**Fonctionnement** :
-1. **Upload** : Fichier → Validation (taille, extension) → Azure Blob Storage → Métadonnées PostgreSQL
-2. **Téléchargement** : Requête → Vérification permissions → Récupération Azure → Stream vers client
-3. **Prévisualisation** : Génération URL signée Azure → Affichage dans viewer
-4. **Recherche** : Requête SQL avec filtres → Retour liste filtrée
-
-### 📁 Gestion des Dossiers
-
-- ✅ **Création** : Dossiers imbriqués avec arborescence
-- ✅ **Navigation** : Breadcrumbs, navigation intuitive
-- ✅ **Organisation** : Déplacement, renommage, suppression
-- ✅ **Structure** : Arborescence complète avec relations parent-enfant
-
-**Fonctionnement** :
-1. Création d'un dossier → Enregistrement dans PostgreSQL avec `parent_id`
-2. Navigation → Filtrage des fichiers par `folder_id`
-3. Breadcrumbs → Reconstruction du chemin depuis la racine
-4. Déplacement → Mise à jour du `folder_id` des fichiers/dossiers enfants
-
-### 🗑️ Gestion de la Corbeille
-
-- ✅ **Soft Delete** : Suppression réversible (marquage `deleted_at`)
-- ✅ **Restauration** : Récupération des fichiers supprimés
-- ✅ **Suppression définitive** : Suppression du fichier Azure + base de données
-- ✅ **Vue dédiée** : Page corbeille avec filtres
-
-**Fonctionnement** :
-1. **Suppression** : `deleted_at` = timestamp → Fichier masqué des listes normales
-2. **Corbeille** : Filtrage `WHERE deleted_at IS NOT NULL`
-3. **Restauration** : `deleted_at` = NULL → Fichier réapparaît
-4. **Suppression définitive** : Suppression Azure Blob + Suppression DB
-
-### 🔗 Partage de Fichiers
-
-- ✅ **Liens publics** : Génération de tokens uniques
-- ✅ **Expiration** : Liens avec date d'expiration
-- ✅ **Protection** : Mot de passe optionnel
-- ✅ **Accès anonyme** : Téléchargement sans authentification
-
-**Fonctionnement** :
-1. Génération d'un token UUID unique
-2. Création d'un `ShareLink` avec expiration et mot de passe (optionnel)
-3. URL publique : `/share/{token}`
-4. Accès : Vérification token + expiration + mot de passe si requis
-5. Téléchargement via URL signée Azure
-
-### 📊 Dashboard
-
-- ✅ **Statistiques** : Nombre de fichiers, espace utilisé/disponible
-- ✅ **Graphiques** : Visualisation de l'espace de stockage
-- ✅ **Fichiers récents** : Liste des derniers fichiers modifiés
-- ✅ **Activité** : Vue d'ensemble de l'activité utilisateur
-
-**Fonctionnement** :
-1. Agrégation SQL : `COUNT`, `SUM(file_size)` par utilisateur
-2. Calcul du pourcentage : `(storage_used / storage_available) * 100`
-3. Fichiers récents : `ORDER BY updated_at DESC LIMIT 10`
-4. Affichage avec graphiques React (Chart.js)
-
-### 💬 Commentaires et Historique
-
-- ✅ **Commentaires** : Commentaires sur fichiers et dossiers
-- ✅ **Historique** : Historique des modifications de fichiers
-- ✅ **Versions** : Gestion des versions de fichiers (en développement)
+- 🔐 Authentification OAuth2 et JWT
+- 📁 Uploads / téléchargements de fichiers
+- 📂 Gestion de dossiers et arborescence
+- 🔄 Versioning et historique des fichiers
+- 🔗 Partage de liens publics avec expiration et mot de passe
+- 🗑️ Corbeille et restauration
+- 📊 Statistiques d’utilisation
+- 🌍 Stockage hybride local + cloud
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture hybride
 
-### Structure Globale
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Vercel)                    │
-│              React + TypeScript + Vite                  │
-│                 Variables VITE_API_URL                  │
-└───────────────────────┬─────────────────────────────────┘
-                        │ HTTPS/REST API / WSS
-                        │ JWT Authentication
-┌───────────────────────▼─────────────────────────────────┐
-│      Ingress hybride (Tailscale Funnel / HAProxy)       │
-│           Nginx reverse proxy + healthchecks            │
-└───────┬───────────────────────────────┬─────────────────┘
-        │                               │
-┌───────▼────────┐            ┌────────▼──────────┐
-│  web1-paris     │            │  web1-ny          │
-│  Nginx + Uvicorn│            │  Nginx + Uvicorn  │
-│  Local backend  │            │  Local backend    │
-└───────┬────────┘            └────────┬──────────┘
-        │                               │
-        │                               │
-┌───────▼────────┐            ┌────────▼──────────┐
-│  ProxySQL /     │            │  GlusterFS        │
-│  Galera MySQL   │            │  /mnt/supfile      │
-│  Split read/write│           │  réplication       │
-└─────────────────┘            └───────────────────┘
-```
-
-### Structure du Projet
+### Vue d’ensemble
 
 ```
-SUPFile/
-├── frontend/                 # Application React
-│   ├── src/
-│   │   ├── components/       # Composants réutilisables
-│   │   ├── pages/            # Pages de l'application
-│   │   ├── services/         # Services API
-│   │   ├── contexts/         # Contextes React (Auth, Theme)
-│   │   ├── hooks/            # Hooks personnalisés
-│   │   └── utils/            # Utilitaires
-│   ├── public/               # Fichiers statiques + Service Worker
-│   └── package.json
-│
-├── backend/                  # API FastAPI
-│   ├── app/
-│   │   ├── api/v1/           # Routes API version 1
-│   │   │   ├── auth.py       # Authentification JWT
-│   │   │   ├── oauth.py      # OAuth2 (Google, GitHub, Microsoft)
-│   │   │   ├── files.py      # Gestion fichiers
-│   │   │   ├── folders.py    # Gestion dossiers
-│   │   │   ├── share.py      # Partage de fichiers
-│   │   │   ├── dashboard.py  # Statistiques
-│   │   │   └── ...
-│   │   ├── core/             # Configuration
-│   │   │   ├── config.py     # Settings (Pydantic)
-│   │   │   ├── database.py   # SQLAlchemy
-│   │   │   ├── security.py    # JWT, bcrypt
-│   │   │   └── middleware.py # CORS, auth
-│   │   ├── models/           # Modèles SQLAlchemy
-│   │   │   ├── user.py
-│   │   │   ├── file.py
-│   │   │   ├── folder.py
-│   │   │   └── ...
-│   │   └── services/         # Services métier
-│   │       └── azure_blob.py # Azure Blob Storage
-│   ├── alembic/             # Migrations base de données
-│   └── requirements.txt
-│
-└── docker-compose.yml        # Configuration Docker local
+Frontend (Vercel)
+  └─ HTTPS/WSS
+      ┌────────────────────────────────────────────┐
+      │      Ingress Hybride (Tailscale / HAProxy) │
+      │  Nginx reverse proxy + tunnel sécurisé     │
+      └────────────────────────────────────────────┘
+                    │
+                    ▼
+      ┌─────────────────────────────────────────┐
+      │  Backend FastAPI / Uvicorn              │
+      │  + MySQL Galera / ProxySQL              │
+      │  + GlusterFS shared storage              │
+      │  + Azure Blob Storage fallback           │
+      └─────────────────────────────────────────┘
 ```
+
+### Composants clés
+
+- `frontend/` : application React + Vite.
+- `backend/` : API FastAPI, SQLAlchemy, services de stockage.
+- `docker-compose.yml` : environnement local complet.
+- `deploy/` : exemples Nginx, HAProxy, service systemd.
+- `DOCUMENTATION.md` : guide de déploiement détaillé.
+
+### Mode de déploiement
+
+- `Frontend` sur Vercel pour rapidité et distribution globale.
+- `Backend` sur VM/serveur privé avec Tailscale Funnel ou HAProxy.
+- `MySQL Galera` et `ProxySQL` pour haute disponibilité et scalabilité.
+- `GlusterFS` pour le partage des `UPLOAD_PATH` entre plusieurs instances.
+- `Azure Blob Storage` pour la redondance cloud et le fallback lorsque le stockage local n’est pas disponible.
+
+### Stockage hybride
+
+1. Le backend enregistre les métadonnées dans la base MySQL.
+2. Les fichiers sont d’abord stockés dans GlusterFS pour un accès local partagé.
+3. Si le stockage local chute, une stratégie de fallback vers Azure Blob Storage prend le relais.
+4. Les téléchargements et la preview reposent sur des flux HTTP sécurisés via FastAPI.
 
 ---
 
-## 🚀 Installation
+## ⚙️ Installation locale
 
 ### Prérequis
 
-- **Python** 3.11+
-- **Node.js** 18+
-- **Docker** & Docker Compose (recommandé)
-- **PostgreSQL** (ou via Docker)
-- **Compte Azure** (pour Blob Storage)
+- Python 3.11+
+- Node.js 18+
+- Docker & Docker Compose
+- Git
 
-### Installation Rapide avec Docker
+### Démarrage rapide
 
 ```bash
-# 1. Cloner le projet
 git clone https://github.com/MEVENGUE/SUPFile-VB-App.git
-cd SUPFile-VB-App
+cd SUPFile-Vercel-App
 
-# 2. Créer le fichier .env
-cp .env.example .env
-# Éditer .env avec vos configurations
+# Copier les exemples d'environnement
+copy backend\.env.example backend\.env
+copy frontend\.env.example frontend\.env
 
-# 3. Démarrer les services
+# Installer les dépendances frontend
+cd frontend
+npm install
+
+# Installer les dépendances backend
+cd ..\backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Lancer les services locaux
+cd ..
 docker-compose up -d
 
-# 4. Initialiser la base de données
-docker exec -it supfile-backend bash
+# Exécuter les migrations
+cd backend
+.venv\Scripts\Activate.ps1
 alembic upgrade head
-
-# 5. Accéder à l'application
-# Frontend: http://localhost:3000
-# Backend: http://localhost:8000
-# API Docs: http://localhost:8000/docs
 ```
 
-### Installation Manuelle
+### Accès local
 
-Voir [DOCUMENTATION.md](./DOCUMENTATION.md#installation) pour les instructions détaillées.
+- Frontend : `http://localhost:3000`
+- Backend : `http://localhost:8000`
+- API docs : `http://localhost:8000/docs`
 
 ---
 
-## 🌐 Déploiement
+## 🚀 Déploiement
 
 ### Frontend (Vercel)
 
-1. Connectez votre dépôt GitHub à Vercel
-2. Configurez le **Root Directory** : `frontend`
-3. Ajoutez les variables d'environnement :
-   ```env
-   VITE_API_URL=https://web1-paris.tail69cc44.ts.net/api/v1
-   VITE_WS_URL=wss://web1-paris.tail69cc44.ts.net/api/v1/ws
-   ```
-   ou, pour HAProxy :
-   ```env
-   VITE_API_URL=https://100.69.138.20/api/v1
-   VITE_WS_URL=wss://100.69.138.20/api/v1/ws
-   ```
-4. Déployez !
+1. Connectez le dépôt GitHub à Vercel.
+2. Indiquez `frontend` comme répertoire racine.
+3. Ajoutez ces variables d’environnement :
 
-### Backend (hybride VM / Tailscale / HAProxy)
+```env
+VITE_API_URL=https://<PUBLIC_HOST>/api/v1
+VITE_WS_URL=wss://<PUBLIC_HOST>/api/v1/ws
+```
 
-1. Créez un environnement Python sur la VM backend
-2. Copiez `backend/.env.example` ou `/etc/supfile/supfile.env`
-3. Configurez `DATABASE_URL` via ProxySQL, `UPLOAD_PATH` sur GlusterFS, et secrets (`SECRET_KEY`, `JWT_SECRET_KEY`)
-4. Déployez le backend avec Uvicorn + systemd / `supfile.service`
-5. Configurez Nginx (`deploy/nginx-supfile.conf`) et HAProxy (`deploy/haproxy.cfg.example`)
-6. Activez Tailscale Funnel ou HAProxy pour l’accès public
-7. Exécutez les migrations : `alembic upgrade head`
+4. Déployez la branche principale.
 
-📖 **Guide complet** : [DOCUMENTATION.md](./DOCUMENTATION.md#déploiement)
+### Backend hybride (VM + Tailscale / HAProxy)
+
+1. Déployez votre VM backend et installez Python 3.11.
+2. Copiez `backend/.env.example` vers `backend/.env`.
+3. Configurez :
+   - `DATABASE_URL` connectant ProxySQL à Galera MySQL.
+   - `UPLOAD_PATH` sur votre volume GlusterFS.
+   - `SECRET_KEY`, `JWT_SECRET_KEY` et les secrets OAuth.
+   - `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY` si Azure Blob est utilisé.
+4. Configurez l’ingress :
+   - `deploy/nginx-supfile.conf`
+   - `deploy/haproxy.cfg.example`
+5. Ouvrez l’accès public via Tailscale Funnel ou HAProxy.
+6. Activez le service systemd / service manager.
+7. Lancez les migrations :
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+### Conseils de production
+
+- Surveillez la réplication Galera et la latence ProxySQL.
+- Vérifiez la disponibilité du volume GlusterFS sur tous les nœuds.
+- Testez le fallback Azure pour les uploads et téléchargements.
+- Utilisez HTTPS et des en-têtes de sécurité stricts.
+
+---
+
+## 🔐 Sécurité et OAuth
+
+- JWT pour l’authentification et la gestion des sessions.
+- OAuth2 pour Google, GitHub et Microsoft.
+- Infrastructure isolée via Tailscale et reverse proxy.
+- Variables sensibles conservées dans `.env`.
 
 ---
 
 ## 📚 Documentation
 
-- **[📖 Documentation Complète](./DOCUMENTATION.md)** : Architecture, API, sécurité, déploiement
-- **[📊 Diagrammes Mermaid](./DIAGRAMS.md)** : Diagrammes d'architecture et de flux
-- **[🔧 Configuration OAuth](./DOCUMENTATION.md#oauth2)** : Configuration Google, GitHub, Microsoft
+- `DOCUMENTATION.md` : guide d’installation complet, architecture, API et sécurité.
+- `deploy/` : exemples de configuration pour Nginx, HAProxy et systemd.
+- `railway.json` : exemple de configuration de déploiement.
 
 ---
 
-## 🛠️ Technologies
+## 🧰 Technologies
 
 ### Frontend
-- **React** 18.2.0 - Bibliothèque UI
-- **TypeScript** 5.3.3 - Typage statique
-- **Vite** 5.0.8 - Build tool ultra-rapide
-- **React Router** 6.20.0 - Navigation
-- **React Query** 5.12.2 - Gestion d'état serveur
-- **Axios** 1.6.2 - Requêtes HTTP
-- **React Dropzone** 14.2.3 - Upload drag & drop
-- **React Toastify** 9.1.3 - Notifications
+- React 18
+- TypeScript
+- Vite
+- Axios
+- React Router
 
 ### Backend
-- **FastAPI** 0.104.1 - Framework Python moderne
-- **Python** 3.11 - Langage de programmation
-- **SQLAlchemy** 2.0.23 - ORM
-- **Alembic** 1.12.1 - Migrations
-- **PostgreSQL** 15 - Base de données
-- **Azure Blob Storage** 12.19.0 - Stockage fichiers
-- **Python-JOSE** 3.3.0 - JWT
-- **Passlib** + **Bcrypt** - Hachage mots de passe
-- **Pydantic** 2.5.0 - Validation
-
-### Infrastructure
-- **Docker** & **Docker Compose** - Containerisation
-- **Vercel** - Hébergement frontend
-- **Tailscale** - Backbone sécurisé (Funnel)
-- **HAProxy** - Ingress, split HTTP, active/active
-- **Nginx** - Reverse proxy local
-- **ProxySQL / Galera** - Réplication MySQL et split lecture/écriture
-- **GlusterFS** - Réplication fichiers
-- **Azure Blob Storage** - Option storage cloud
+- FastAPI
+- Python 3.11
+- SQLAlchemy
+- Alembic
+- MySQL / Galera
+- Azure Blob Storage
 
 ---
 
-## 👥 Contributeurs
+## 🤝 Contribuer
 
-- **MEVENGUE Franck** - Développeur principal
-- **Nadia Loukdache** - Co-développeuse
-- **Ayman El-Karroussi** - Co-développeur
+1. Forkez le dépôt.
+2. Créez une branche dédiée.
+3. Commitez les changements avec un message clair.
+4. Ouvrez une pull request.
+5. Documentez les variables d’environnement et les opérations de déploiement.
+
 ---
 
 ## 📄 Licence
 
-Projet académique SUPINFO - Tous droits réservés
-
----
-
-<div align="center">
-
-**Fait avec ❤️ par l'équipe SUPFile**
-
-[🌐 Application Live](https://supfile-webapp.vercel.app) • [📚 Documentation](./DOCUMENTATION.md) • [📊 Diagrammes](./DIAGRAMS.md)
-
-</div>
+Projet académique SUPINFO.
