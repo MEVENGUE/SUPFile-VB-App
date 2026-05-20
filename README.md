@@ -146,22 +146,28 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Frontend (Vercel)                    │
-│              React + TypeScript + Vite                   │
-│                  Port: 3000 (dev)                       │
+│              React + TypeScript + Vite                  │
+│                 Variables VITE_API_URL                  │
 └───────────────────────┬─────────────────────────────────┘
-                        │ HTTPS/REST API
+                        │ HTTPS/REST API / WSS
                         │ JWT Authentication
 ┌───────────────────────▼─────────────────────────────────┐
-│                   Backend (Railway)                      │
-│                FastAPI + Python 3.11                     │
-│                  Port: 8000 (dev)                       │
+│      Ingress hybride (Tailscale Funnel / HAProxy)       │
+│           Nginx reverse proxy + healthchecks            │
 └───────┬───────────────────────────────┬─────────────────┘
         │                               │
 ┌───────▼────────┐            ┌────────▼──────────┐
-│  PostgreSQL    │            │  Azure Blob        │
-│  (Railway)     │            │  Storage           │
-│  Métadonnées   │            │  Fichiers binaires │
-└────────────────┘            └────────────────────┘
+│  web1-paris     │            │  web1-ny          │
+│  Nginx + Uvicorn│            │  Nginx + Uvicorn  │
+│  Local backend  │            │  Local backend    │
+└───────┬────────┘            └────────┬──────────┘
+        │                               │
+        │                               │
+┌───────▼────────┐            ┌────────▼──────────┐
+│  ProxySQL /     │            │  GlusterFS        │
+│  Galera MySQL   │            │  /mnt/supfile      │
+│  Split read/write│           │  réplication       │
+└─────────────────┘            └───────────────────┘
 ```
 
 ### Structure du Projet
@@ -223,8 +229,8 @@ SUPFile/
 
 ```bash
 # 1. Cloner le projet
-git clone https://github.com/MEVENGUE/SUPFile-Vercel-App.git
-cd SUPFile-Vercel-App
+git clone https://github.com/MEVENGUE/SUPFile-VB-App.git
+cd SUPFile-VB-App
 
 # 2. Créer le fichier .env
 cp .env.example .env
@@ -257,17 +263,25 @@ Voir [DOCUMENTATION.md](./DOCUMENTATION.md#installation) pour les instructions d
 2. Configurez le **Root Directory** : `frontend`
 3. Ajoutez les variables d'environnement :
    ```env
-   VITE_API_URL=https://votre-backend.railway.app/api/v1
+   VITE_API_URL=https://web1-paris.tail69cc44.ts.net/api/v1
+   VITE_WS_URL=wss://web1-paris.tail69cc44.ts.net/api/v1/ws
+   ```
+   ou, pour HAProxy :
+   ```env
+   VITE_API_URL=https://100.69.138.20/api/v1
+   VITE_WS_URL=wss://100.69.138.20/api/v1/ws
    ```
 4. Déployez !
 
-### Backend (Railway)
+### Backend (hybride VM / Tailscale / HAProxy)
 
-1. Créez un projet Railway
-2. Ajoutez PostgreSQL
-3. Déployez le backend depuis GitHub
-4. Configurez les variables d'environnement (voir [DOCUMENTATION.md](./DOCUMENTATION.md#déploiement))
-5. Exécutez les migrations : `alembic upgrade head`
+1. Créez un environnement Python sur la VM backend
+2. Copiez `backend/.env.example` ou `/etc/supfile/supfile.env`
+3. Configurez `DATABASE_URL` via ProxySQL, `UPLOAD_PATH` sur GlusterFS, et secrets (`SECRET_KEY`, `JWT_SECRET_KEY`)
+4. Déployez le backend avec Uvicorn + systemd / `supfile.service`
+5. Configurez Nginx (`deploy/nginx-supfile.conf`) et HAProxy (`deploy/haproxy.cfg.example`)
+6. Activez Tailscale Funnel ou HAProxy pour l’accès public
+7. Exécutez les migrations : `alembic upgrade head`
 
 📖 **Guide complet** : [DOCUMENTATION.md](./DOCUMENTATION.md#déploiement)
 
@@ -307,8 +321,12 @@ Voir [DOCUMENTATION.md](./DOCUMENTATION.md#installation) pour les instructions d
 ### Infrastructure
 - **Docker** & **Docker Compose** - Containerisation
 - **Vercel** - Hébergement frontend
-- **Railway** - Hébergement backend
-- **Azure Blob Storage** - Stockage cloud
+- **Tailscale** - Backbone sécurisé (Funnel)
+- **HAProxy** - Ingress, split HTTP, active/active
+- **Nginx** - Reverse proxy local
+- **ProxySQL / Galera** - Réplication MySQL et split lecture/écriture
+- **GlusterFS** - Réplication fichiers
+- **Azure Blob Storage** - Option storage cloud
 
 ---
 
