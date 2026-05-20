@@ -227,6 +227,15 @@ alembic upgrade head
 - MySQL / Galera
 - Azure Blob Storage
 
+
+---
+
+## 👥 Contributeurs
+
+- **MEVENGUE Franck** - Développeur principal
+- **Nadia Loukdache** - Co-développeuse
+- **Ayman El-Karroussi** - Co-développeur
+
 ---
 
 ## 🤝 Contribuer
